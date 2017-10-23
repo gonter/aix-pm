@@ -1,0 +1,214 @@
+#!/usr/bin/perl
+# $Id: Lspath,v 1.6 2012/04/22 20:04:59 gonter Exp $
+
+=pod
+
+=head1 USAGE
+
+  Lspath
+
+display FC MPIO information hdisks
+
+=head1 OPTIONS
+
+ -vg .. show VG info
+ -hd .. sort by hdisk
+ -p  .. sort by path
+ -D  .. debug
+ -watch .. continously watch paths
+ -nagios .. prepare nagios health state
+
+=cut
+
+use strict;
+use SAN::Policy;
+use Util::ts;
+use Data::Dumper;
+$Data::Dumper::Indent= 1;
+
+my $LSPATH= '/usr/sbin/lspath';
+my $MPIO_PATHS= '/etc/mpio_paths';
+my $policy_file= '/etc/sanpolicy';
+
+my $sort_mode= 'none';
+my $show_paths= 1;
+my $show_stats= 0;
+my $show_nagios= 0;
+my $watch= 0;
+my $sleep_time= 60*5;
+my @LEVEL= qw(OK UNKNOWN CRITICAL);
+
+my $DEBUG= 0;
+my $show_vg= 0;
+while (defined (my $arg= shift (@ARGV)))
+{
+  if ($arg =~ /^-/)
+  {
+       if ($arg eq '-vg')     { $show_vg= 1; }
+    elsif ($arg eq '-D')      { $DEBUG= 1; }
+    elsif ($arg eq '-hd')     { $sort_mode= 'hdisk'; }
+    elsif ($arg eq '-p')      { $sort_mode= 'path'; }
+    elsif ($arg eq '-watch')  { $watch= 1; }
+    elsif ($arg eq '-stats')  { $show_stats= 1; }
+    elsif ($arg eq '-nagios') { $watch= $show_stats= 1; $show_paths= 0; }
+    else { &usage; exit (0); }
+  }
+}
+
+my $policy= new SAN::Policy ('policy_file' => $policy_file, 'get_spports' => 1);
+$policy->refresh_policy (); # '@lspath.dump'
+# print "policy: ", Dumper ($policy);
+my $paths= $policy->{'paths'};
+print "paths: ", Dumper ($paths);
+
+if ($DEBUG)
+{
+  print Dumper ($paths), "\n";
+}
+
+while (1)
+{
+  my $mpio= new AIX::MPIO ('sort_mode' => $sort_mode);
+
+  $mpio->read_lspath ($paths);
+  $mpio->show_paths () if ($show_paths);
+
+# print Dumper ($mpio);
+
+  $mpio->show_stats () if ($show_stats);
+
+  last unless ($watch);
+  sleep ($sleep_time);
+}
+
+sub usage
+{
+  system ("perldoc $0");
+}
+
+exit (0);
+
+package AIX::MPIO;
+
+sub new
+{
+  my $class= shift;
+  my %par= @_;
+
+  my $obj= bless {}, $class;
+
+  foreach my $par (keys %par)
+  {
+    $obj->{$par}= $par{$par};
+  }
+
+  $obj;
+}
+
+sub read_lspath
+{
+  my $obj= shift;
+  my $paths= shift;
+
+  my $cmd= "$LSPATH -H -F 'name status parent connection'";
+  open (CMD, $cmd. '|') or return undef;
+
+  my %comments;
+  my $max_lng= 0;
+  my (%lines, %stats);
+  $obj->{'lines'}= \%lines;
+  $obj->{'stats'}= \%stats;
+  my $sort_mode= $obj->{'sort_mode'} || 'none';
+
+  while (<CMD>)
+  {
+    chop;
+
+    if (/^name/)
+    {
+      $obj->{'hdr'}= $_;
+      next;
+    }
+    elsif (/^\s*$/)
+    {
+      next;
+    }
+
+    my ($name, $status, $parent, $connection)= split (' ');
+    my ($path, $hlu)= split (',', $connection);
+
+    my $comment= $comments{$path};
+    if (!defined ($comment) && exists ($paths->{$path}))
+    {
+      my $p= $paths->{$path};
+      $comments{$path}=
+        $comment= join (' ', map { ($_, $p->{$_}) } qw(wwpn_alias sernr fabric));
+    }
+
+    my $sort_key= 'none';
+    if ($sort_mode eq 'hdisk')
+    {
+      $sort_key= sprintf ("%04d", $1) if ($name =~ /^hdisk(\d+)$/);
+    }
+    elsif ($sort_mode eq 'path')
+    {
+      $sort_key= $path;
+    }
+
+    $stats{$status}++;
+    push (@{$lines{$sort_key}}, [$_, $comment]);
+    my $lng= length ($_);
+    $max_lng= $lng if ($lng > $max_lng);
+  }
+  close (CMD);
+
+  $obj->{'max_lng'}= $max_lng;
+  $obj;
+}
+
+sub show_paths
+{
+  my $mpio= shift;
+
+  print $mpio->{'hdr'}, "\n\n";
+
+  my ($max_lng, $lines)= map { $mpio->{$_}; } qw(max_lng lines);
+
+# print "lines: ", Dumper ($lines);
+  foreach my $k (sort keys %$lines)
+  {
+    my @l= @{$lines->{$k}};
+
+    foreach my $l (@l)
+    {
+      my ($line, $comment)= @$l;
+      print $line;
+      if ($comment)
+      {
+        my $lng= $max_lng-length($line);
+        print ' 'x $lng , ' ', $comment;
+      }
+      print "\n";
+    }
+  }
+}
+
+sub show_stats
+{
+  my $mpio= shift;
+
+    my $st= $mpio->{'stats'};
+    my $level= 0;
+
+    foreach my $k (keys %$st)
+    {
+      if ($k eq 'Enabled') { next; }
+      elsif ($k eq 'Missing' || $k eq 'Failed') { $level= 2; }
+      else { $level= 1 if ($level == 0); }
+    }
+
+    print $LEVEL[$level], ' ', main::ts_ISO (),  ' MPIO: ',
+   join (' ', map { $_ .'='. $st->{$_} } keys %$st), "\n";
+}
+
+__END__

@@ -1,0 +1,178 @@
+#!/usr/local/bin/perl
+# $Id: lpmon,v 1.2 2007/10/23 17:22:18 gonter Exp $
+
+=pod
+
+=head1 NAME
+
+monitor print queues
+
+=head2 SYNOPSIS
+
+=head2 DESCRIPTION
+
+Monitors printers.  If a printer is down, the queue is purged and
+the printer is restarted.
+
+=cut
+
+use strict;
+use lib '.';
+use print_refs;
+
+use AIX::printer;
+
+# configuration
+my $email_addr= 'lpmon';
+my $log_file= '/var/log/printer';
+my $sleep_time= 30;
+my $op_mode= 'once';
+
+# initialization
+my %OK_STATES= map { $_ => 1 } qw(__UNKNOWN__ READY SENDING);
+my $hostname= `hostname`; chop ($hostname);
+my %printer_status= ();
+
+my %PRINTER;
+my $arg;
+while (defined ($arg= shift (@ARGV)))
+{
+  if ($arg =~ /^-/)
+  {
+       if ($arg =~ /^-(watch)/) { $op_mode= $1; }
+    elsif ($arg eq '--')
+    {
+      map { $PRINTER{$_}= new AIX::printer ('printer' => $_); } @ARGV;
+      @ARGV= ();
+    }
+    else { &usage; }
+    next;
+  }
+
+  $PRINTER{$arg}= new AIX::printer ('printer' => $arg);
+}
+
+local *LOG_FILE;
+if ($op_mode eq 'watch')
+{
+  unless (open (LOG_FILE, $log_file))
+  {
+    print "ATTN: cant open $log_file\n";
+  }
+  seek (LOG_FILE, 0, 2);
+}
+
+my @REPORT= ();
+while (1)
+{
+  @REPORT= ();
+  foreach $arg (sort keys %PRINTER)
+  {
+    &check_printer ($PRINTER{$arg});
+  }
+
+  last if ($op_mode eq 'once');
+
+  print "processing $log_file\n";
+  while (1)
+  {
+    my $log_line= <LOG_FILE>;
+    last unless (defined ($log_line));
+
+    chop ($log_line);
+    print "log_line: '$log_line'\n";
+  }
+  print "log processed\n";
+
+  &send_report (@REPORT) if (@REPORT);
+
+  print "sleeping $sleep_time seconds\n";
+  sleep ($sleep_time);
+}
+
+exit (0);
+
+sub send_report
+{
+  print "sending report to $email_addr\n";
+  unless (open (MAIL, "|/usr/bin/mail -s '$hostname lpmon' '$email_addr'"))
+  {
+    print "ATTN: can't send report to $email_addr\n";
+    return undef;
+  }
+
+  print MAIL join (";\n", @_), "\n";
+  close (MAIL);
+}
+
+sub usage
+{
+  print <<EOX;
+usage: $0 [-opts] pars
+
+options:
+-x  ... set x flag
+--  ... remaining arguments are parameters
+EOX
+}
+
+# ----------------------------------------------------------------------------
+sub check_printer
+{
+  my $p= shift;
+  my ($printer)= $p->get ('printer');
+
+  my ($st, $job_count)= $p->lpstat ();
+
+  print ">> printer='$printer' st='$st'\n";
+  &print_refs (*STDOUT, 'p' => $p);
+
+  my $prev_state;
+  if (($prev_state= $printer_status{$printer}) ne $st)
+  { # status change!
+    $printer_status{$printer}= $st;
+
+    $prev_state= '__UNKNOWN__' unless ($prev_state);
+
+    unless (exists ($OK_STATES{$prev_state}) && exists ($OK_STATES{$st}))
+    {
+      push (@REPORT, "$printer now $st, was $prev_state");
+    }
+
+    if ($st eq 'DOWN')
+    {
+      if ($job_count)
+      {
+        my $count= $p->purge_queue ('qadm');
+        push (@REPORT, "$count jobs purged");
+      }
+
+      $p->UP ();
+      push (@REPORT, "started");
+      $printer_status{$printer}= 'READY'; # printer status *should* now by ready!
+    }
+
+  }
+}
+
+=cut
+
+=head1 BUGS
+
+Too much diagnostic output.
+
+Permanent printer failures not yet handled.
+
+=head1 REFERENCES
+
+  AIX::printer
+  AIX manual pages for lpstat, qadm, lprm, etc.
+
+=head1 AUTHOR
+
+Gerhard Gonter <ggonter@cpan.org>
+
+See http://aix-pm.sourceforge.net/ for more information.
+
+=over
+

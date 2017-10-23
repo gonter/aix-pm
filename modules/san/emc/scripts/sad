@@ -1,0 +1,252 @@
+#!/usr/bin/perl
+# $Id: sad,v 1.17 2012/05/12 13:23:55 gonter Exp $
+
+use strict;
+
+=pod
+
+=head1 NAME
+
+sad  --  storage admin display
+
+=head1 DESCRIPTION
+
+Display storage system data, e.g. Disks, RaidGroups, LUNs, StorageGroups
+
+=head1 OPTIONS
+
+  -n <name>      storage system name
+  -P <directory> alternative path for policy file
+  -x <name>      storage system name and path for cache directory (-n and -P at once)
+  -SGT           print StorageGroup Project Stanzas for unowned Groups
+
+=head2 debugging options
+
+  -D             debug
+  -PD            dump policy to file named \@sad.policy.EPOCH
+
+=cut
+
+use lib '/root/work/perl';
+use lib '.';
+
+use Data::Dumper;
+$Data::Dumper::Indent= 1;
+## use print_refs;
+sub print_refs { local *F= shift; print F shift, '=', Dumper (shift), "\n"; }
+
+use SAN::Policy;
+use AIX::NIM::Config;
+use EMC::Config;
+use EMC::CX;
+use Util::Simple_CSV;
+
+# Configuration
+my $POLICY_FILE= '/etc/sanpolicy';
+
+# initialization
+my @CF_FILES= qw(crus disk lun rg sg metalun-list port-list-all port-list-sp);
+my %CF_FILES_mtime= ();
+my @JOBS;
+my $arg;
+my $show_SGT= 0;
+my $emc_name;
+my $DEBUG= 0;
+my $out_prefix= 'storage';
+my $op_mode= 'report';
+my $policy_dump= undef;
+
+while ($arg= shift (@ARGV))
+{
+  if ($arg =~ /^-/)
+  {
+    if ($arg eq '-x')
+    {
+      my $path= shift (@ARGV);
+      $path=~ s#/$##;
+      $emc_name= $path;    # TODO: assumes that cache dir is named after storage!
+      push (@JOBS, map { join ('/', $path, $_) } @CF_FILES);
+    }
+    elsif ($arg eq '-n')
+    {
+      $emc_name= shift (@ARGV);
+    }
+    elsif ($arg eq '-P')
+    {
+      $POLICY_FILE= shift (@ARGV);
+    }
+    elsif ($arg eq '-D') { $DEBUG= 1; }
+    elsif ($arg eq '-SGT') { $show_SGT= 1; }
+    elsif ($arg eq '-PD') { $policy_dump= '@sad.policy.' . time (); }
+    elsif ($arg eq '-DP') { $op_mode= 'disk_performance'; }
+    else { &usage; }
+  }
+  else
+  {
+    push (@JOBS, $arg);
+  }
+}
+
+my $xp= new SAN::Policy ('policy_file' => $POLICY_FILE, 'system' => 'EMC');
+$xp->refresh_policy ($policy_dump);
+
+=cut
+
+my $policy= new AIX::NIM::Config;  # prepare a fresh config object
+$policy->get_config ($POLICY_FILE);
+$xp->get_san_config ($policy);     # transcribe policy notation
+
+=cut
+
+my $config= new EMC::Config ();
+
+if ($emc_name)
+{
+  $config->set ('name' => $emc_name);
+  my $xp1= $xp->{'emcs'}->{$emc_name};
+  $config->set ('policy' => $xp1);
+# print "emc_name=[$emc_name] xp1=[$xp1] ", Dumper ($xp1);
+}
+
+my $mtime_disk;
+while ($arg= shift (@JOBS))
+{
+  my $r= $config->file_splitter ($arg);
+  if ($arg =~ /disk/)
+  {
+    $mtime_disk= (stat ($arg))[9];
+  }
+
+  if (0 && $DEBUG && open (DEBUG, '>@DEBUG.ep1.r.' .time ()))
+  {
+    print DEBUG 'r=', Dumper ($r), "\n";
+    close (DEBUG);
+  }
+
+  $config->analyze_config_data ($r);
+}
+
+if ($op_mode eq 'disk_performance')
+{
+  $mtime_disk ||= time ();
+  $config->DiskBusy ($mtime_disk, 'disk_perf.csv');
+  exit (0);
+}
+
+# &print_refs (*STDOUT, "config", $config);
+# delete $config->{'items'}->{'disk'};
+# &print_refs (*STDOUT, "config", $config);
+
+$config->fixup ();
+
+my $zd_csv= "$emc_name/zerodisk.csv";
+if (-f $zd_csv)
+{
+  my $csv= new Util::Simple_CSV ('load' => $zd_csv);
+
+  sub check_zerodisk
+  {
+    my ($array_ref, $hash_ref)= @_;
+    return exists ($hash_ref->{'ZD_status'});
+  }
+
+# ZZZ
+  $csv->filter (\&check_zerodisk);
+  # print "zd_csv: ", Dumper ($csv);
+  my ($xc, $x)= $csv->index ('sn');
+  # print "zd_csv xc=$xc x: ", Dumper ($x);
+
+  $config->fixup_zerodisk ($x);
+}
+
+# $config->DiskSummary ();
+
+  print "\n\n";
+  print '#'x 60, "\n";
+  print "summary generated: ", scalar localtime (time ()), " for $emc_name\n";
+  print "physical system summary\n";
+
+$config->SystemSummary ();
+
+  print "\n\n";
+  print '#'x 60, "\n";
+  print "RAID Groups summary\n";
+
+$config->RaidGroupSummary ('show_luns' => 1);
+
+  print "\n\n";
+  print '#'x 60, "\n";
+  print "LUN summary\n";
+
+$config->LUNSummary ();
+
+  print "\n\n";
+  print '#'x 60, "\n";
+  print "Storage Group summary\n";
+
+$config->StorageGroupSummary ('show_luns' => 1, 'show_hosts' => 1);
+
+  print "HBA port info\n";
+$config->print_hba_port_info ();
+
+$config->show_SGT (*STDOUT) if ($show_SGT);
+
+if ($emc_name)
+{
+  $config->DiskDetails      (join ('/', $out_prefix, $emc_name, 'disks.csv'));
+  $config->RaidGroupDetails (join ('/', $out_prefix, $emc_name, 'rg.csv'));
+  $config->LUNDetails       (join ('/', $out_prefix, $emc_name, 'luns.csv'));
+  $config->SPPortDetails    (join ('/', $out_prefix, $emc_name, 'sp-ports.csv'));
+  $config->HBAPortDetails   (join ('/', $out_prefix, $emc_name, 'hbas.csv'));
+  $config->StorageGroupLUNDetails (join ('/', $out_prefix, $emc_name, 'sg-lun.csv'));
+
+  # experimental: disk performance data extraction from ongoing data collection
+  $mtime_disk ||= time ();
+  $config->DiskBusy ($mtime_disk, 'disk_perf.csv');
+}
+
+if ($DEBUG && open (DEBUG, '>@DEBUG.sad-config.' .time ()))
+{
+  print DEBUG 'config=', Dumper ($config), "\n";
+  close (DEBUG);
+}
+
+if ($DEBUG && open (DEBUG, '>@DEBUG.sad-xp-policy.' .time ()))
+{
+  print DEBUG 'xp=', Dumper ($xp), "\n";
+  close (DEBUG);
+}
+
+=cut
+
+if ($DEBUG && open (DEBUG, '>@DEBUG.sad-policy.' .time ()))
+{
+  print DEBUG 'policy=', Dumper ($policy), "\n";
+  close (DEBUG);
+}
+
+=cut
+
+exit (0);
+
+sub usage
+{
+  print <<EOX;
+usage: $0 [-options] [filenames]
+options:
+-n <name>            ... name of storage system
+-P <policy_file>     ... specify policy file (default: $POLICY_FILE)
+-x <dir>             ... specify directory with (cached) configuration data
+EOX
+}
+
+=pod
+
+=head1 AUTHOR
+
+Gerhard Gonter <ggonter@cpan.org>
+
+See http://aix-pm.sourceforge.net/ for more information.
+
+=over
+

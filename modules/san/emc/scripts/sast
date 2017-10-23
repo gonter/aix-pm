@@ -1,0 +1,756 @@
+#!/usr/bin/perl
+# $Id: sast,v 1.18 2012/02/01 19:44:21 gonter Exp $
+
+use strict;
+
+=pod
+
+=head1 NAME
+
+sast  --  storage administration statistics
+
+=head1 DESCRIPTION
+
+translate storage summary data into HTML
+
+=cut
+
+# use lib '/root/work/perl';
+use lib '.';
+
+use EMC::Config::Port;
+use AIX::NIM::Config;
+use Util::Simple_CSV;
+use Data::Dumper;
+$Data::Dumper::Indent= 1;
+## use Util::print_refs;
+
+# conf
+my $S_TOTAL= '_total_';
+my $S_T_FREE= '_t_free_';
+my $path_storage= 'storage';
+
+my @STATE_LIST= qw(Enabled used free Binding HS_ready Unbound);
+my %DONT_SHOW_STATE= map { $_ => 1 } qw(Binding HS_ready);
+
+# init
+my $show_rg_min_free;
+my $show_contiguous= 0;
+my $show_disk_type;
+my $save_combined_csv= 0;
+
+my $display_factor;
+my $display_unit;
+my $F_CAP_S;
+my $F_CAP_F;
+&unit ('G', 'i');
+
+my %ZONE_FILES= ();
+my $connectivity_status= undef;
+my %JOBS= ();
+my $job_mode= 'emc';
+my $arg;
+while ($arg= shift (@ARGV))
+{
+  if ($arg =~ /^-/)
+  {
+    if ($arg eq '-n'
+        || $arg eq '-x'   # this should specify the cache to, see sad
+       )
+    {
+    }
+    elsif ($arg eq '-c')      { $show_contiguous= 1; }
+    elsif ($arg eq '-emc')    { $job_mode= 'emc'; }
+    elsif ($arg eq '-netapp') { $job_mode= 'netapp'; }
+    elsif ($arg eq '-f')
+    {
+      $show_rg_min_free= shift (@ARGV);
+
+      if ($show_rg_min_free =~ /^(\d+)([PTGMKB])B?$/i)
+      {
+	my ($v, $u)= ($1, $2);
+	&unit ($u, 'i');
+	$show_rg_min_free= $v*$display_factor;
+      }
+      elsif ($show_rg_min_free =~ /^(\d+)([PTGMKB])([dbi])B$/i)
+      {
+	my ($v, $u, $di)= ($1, $2, $3);
+        &unit ($u, $di);
+	$show_rg_min_free= $v*$display_factor;
+      }
+      else { &usage; exit; }
+
+print "show_rg_min_free=$show_rg_min_free display_factor=$display_factor display_unit=$display_unit\n";
+
+    }
+    elsif ($arg eq '-d')
+    {
+      $show_disk_type= shift (@ARGV);
+    }
+    elsif ($arg =~ /-([PTGMKB])B?$/i)       { &unit ($1, 'i'); }
+    elsif ($arg =~ /-([PTGMKB])([dbi])B$/i) { &unit ($1, $2); }
+    elsif ($arg eq '-sum') { $save_combined_csv= 1; }
+    elsif ($arg eq '-Z')
+    {
+      $ZONE_FILES{shift (@ARGV)}= undef;
+    }
+    elsif ($arg eq '-X')
+    {
+      $connectivity_status= shift (@ARGV);
+    }
+    else
+    {
+      &usage; exit (0);
+    }
+
+    next;
+  }
+
+  push (@{$JOBS{$job_mode}}, $arg);
+}
+
+  &process (\%JOBS);
+
+exit (0);
+
+sub unit
+{
+  my $u= shift;
+  my $d_i= shift;
+
+  $u=~ tr/ptgmkb/PTGMKB/;
+  $d_i=~ tr/DI/di/;
+
+  $F_CAP_S= '%14s'; $F_CAP_F= '%14.2f';
+
+  my $base= 1024;
+  if ($d_i eq 'd')
+  {
+    $base= 1000;
+  }
+  elsif ($d_i eq 'b')
+  {
+    $d_i= 'i';
+  }
+
+  $display_unit= $u . $d_i . 'B';
+
+       if ($u eq 'P') { $display_factor= $base**5; $F_CAP_S= '%5s';  $F_CAP_F= '%5.2f'; }
+    elsif ($u eq 'T') { $display_factor= $base**4; }
+    elsif ($u eq 'G') { $display_factor= $base**3; }
+    elsif ($u eq 'M') { $display_factor= $base**2; }
+    elsif ($u eq 'K') { $display_factor= $base;    $F_CAP_S= '%20s'; $F_CAP_F= '%20.2f'; }
+    elsif ($u eq 'B') { $display_factor= 1;        $display_unit= 'B'; $F_CAP_S= '%20s'; $F_CAP_F= '%20.0f'; }
+
+print "u=$u display_factor=$display_factor display_unit=$display_unit\n";
+}
+
+sub usage
+{
+
+print <<"=cut";
+
+=pod
+
+usage: $0 [-options] name
+
+Options:
+  -B                     .. display in byte
+  -[PTGKM]iB             .. display in pebi/tebi/gibi/mebi/kibi-byte
+  -[PTGKM]dB             .. display in peta/tera/giga/mega/kilo-byte
+  -f min_free[PTGMKB]iB  .. display RaidGroups with minimum free space
+  -f min_free[PTGMKB]dB  .. display RaidGroups with minimum free space
+  -c                     .. continuous free space
+  -d /pattern/           .. disk type pattern
+  -Z <zonefile>          .. zone file
+
+Examples:
+  $0 -c -f 512gib -d CLAR300 ea
+
+Defaults:
+  sizes are displayed in gibi-byte (1024*1024*1024 byte) units
+
+=cut
+
+}
+
+sub process
+{
+  my $JOBS= shift;
+
+  my $disks=      new Util::Simple_CSV ('verbose' => 0);
+  my $raidgroups= new Util::Simple_CSV ('verbose' => 0);
+  my $luns=       new Util::Simple_CSV ();
+  my $sp_ports=   new Util::Simple_CSV ();
+  my $hbas=       new Util::Simple_CSV ();
+  my $sg_lun=     new Util::Simple_CSV ();
+
+  my @emc_names= @{$JOBS->{'emc'}};
+  foreach my $name (@emc_names)
+  {
+    my ($fnm_disks, $fnm_luns, $fnm_raidgroups, $fnm_sp_ports, $fnm_hbas, $fnm_sg_lun)=
+       map { $path_storage . '/' . $name . '/' . $_ . '.csv'; } qw(disks luns rg sp-ports hbas sg-lun);
+    # TODO: path name should be configurable
+
+    $disks->merge_csv_file ($fnm_disks);
+    $raidgroups->merge_csv_file ($fnm_raidgroups);
+    $luns->merge_csv_file ($fnm_luns);
+    $sp_ports->merge_csv_file ($fnm_sp_ports);
+    $hbas->merge_csv_file ($fnm_hbas);
+    $sg_lun->merge_csv_file ($fnm_sg_lun);
+  }
+
+  if (exists ($JOBS->{'netapp'}))
+  {
+    my @netapp_names= @{$JOBS->{'netapp'}};
+    foreach my $name (@netapp_names) # netapp names are like na/na1
+    {
+      my ($fnm_sp_ports, $fnm_hbas)=
+         map { $path_storage . '/' . $name . '-' . $_ . '.csv'; } qw(sp-ports hbas);
+print __LINE__, " netapp fnm_sp_ports=[$fnm_sp_ports]\n";
+      $sp_ports->merge_csv_file ($fnm_sp_ports);
+      $hbas->merge_csv_file ($fnm_hbas);
+    }
+  }
+
+  my $s_disks= &sum_up_disks (join (' ', @emc_names), $disks, $raidgroups);
+## print "s_disks: ", Dumper ($s_disks), "\n";
+
+  my $proj= &sum_up_luns (join (' ', @emc_names), $luns);
+## print "proj: ", Dumper ($proj), "\n";
+  $proj->{'FREE'}= $s_disks->{'FREE'};
+
+  if ($save_combined_csv)
+  {
+    $disks->save_csv_file      ('filename' => $path_storage . '/combined-disks.csv');
+    $raidgroups->save_csv_file ('filename' => $path_storage . '/combined-raidgroups.csv');
+    $luns->save_csv_file       ('filename' => $path_storage . '/combined-luns.csv');
+    $sp_ports->save_csv_file   ('filename' => $path_storage . '/combined-sp-ports.csv');
+    $hbas->save_csv_file       ('filename' => $path_storage . '/combined-hbas.csv');
+    $sg_lun->save_csv_file     ('filename' => $path_storage . '/combined-sg-lun.csv');
+
+    ## &analyze_connectivity_status (*STDOUT, $sp_ports, $hbas);
+    my $fnm_summary= $path_storage . '/combined-summary.csv';
+    &save_summary_as_csv ($fnm_summary, 'combined', $proj);
+  }
+  else
+  {
+    my $fnm_summary= $path_storage . '/' . @emc_names[0] . '/summary.csv';
+## print __LINE__, " >fnm_summary='$fnm_summary'\n";
+    &save_summary_as_csv ($fnm_summary, @emc_names[0], $proj);
+  }
+
+  if (defined ($connectivity_status))
+  {
+    local *FO;
+    if (open (FO, ">$connectivity_status"))
+    {
+      &analyze_connectivity_status (*FO, $sp_ports, $hbas);
+      close (FO);
+    }
+  }
+}
+
+sub save_summary_as_csv
+{
+  my $fnm= shift;
+  my $storage_name= shift;
+  my $data= shift;
+
+  ## print 'data: ', Dumper ($data), "\n";
+  open (FO, '>' . $fnm) or return undef;
+
+  print FO join (';', qw(san project bytes)), "\n";
+  foreach my $project (sort keys %$data)
+  {
+    print FO join (';', $storage_name, $project, $data->{$project}), "\n";
+  }
+  close (FO);
+}
+
+=cut
+
+=head analyze_connectivity_status ($sp_ports, $hbas)
+
+analyze connectivity status by checking values from the CSV objects $sp_ports and $hbas
+
+=cut
+
+sub analyze_connectivity_status
+{
+  local *F= shift;
+  my $sp_ports= shift;
+  my $hbas= shift;
+
+  ## open (DUMP, ">\@connectivity.dump");
+  ## print DUMP "SP_Ports: ", Dumper (\$sp_ports), "\n";
+  ## print DUMP "HBAs: ", Dumper (\$hbas), "\n";
+  ## close (DUMP);
+
+  my %REPORT1= (); # report lines hashed by SP label
+  my %REPORT2= (); # report lines hashed by host name
+
+  # analyze SP ports ---------------------
+  my $sp_wwns= {};
+  my $sp_link_problems= 0;
+  my $hba_problems= 0;
+  foreach my $row (@{$sp_ports->{'data'}})
+  {
+    my ($alias, $sys, $sp, $port, $ps, $ls, $ri, $lii, $nlii, $uid)= map { $row->{$_} } qw(alias sys sp port ps ls ri lii nlii uid);
+    next unless ($alias); # don't check links which are not even named
+    my $label= join (' ', $sys, $sp, $port);
+
+    my ($uid, $wwnn, $wwpn)= &EMC::Config::Port::_split_FC_uid ($uid);
+# ZZZ
+    push (@{$sp_wwns->{$wwnn}}, ['wwnn', $sys, $sp, $port]);
+    push (@{$sp_wwns->{$wwpn}}, ['wwpn', $sys, $sp, $port]);
+
+    if ($ps ne 'Online')
+    {
+      push (@{$REPORT1{$label}}, "$label port $ps, should be Online; alias=$alias");
+      $sp_link_problems++;
+    }
+
+    if ($ls ne 'Up')
+    {
+      push (@{$REPORT1{$label}}, "$label link $ls, should be Up; alias=$alias");
+      $sp_link_problems++;
+    }
+
+    if ($ri != $lii || $nlii != 0)
+    {
+      push (@{$REPORT1{$label}}, "$label port logged in count missmatch: registered=$ri logged_in=$lii not_logged_in=$nlii alias=$alias");
+      $hba_problems++;
+    }
+  }
+
+  # analyze HBas ---------------------
+  my %not_registered= ();
+  foreach my $row (@{$hbas->{'data'}})
+  {
+    my ($sys, $sp, $port, $name, $hba, $li, $def)= map { $row->{$_} } qw(sys sp port name hba Logged_In Defined);
+    my $label= join (' ', $sys, $sp, $port);
+
+    if ($li ne 'YES')
+    {
+      push (@{$REPORT1{$label}}, "$label host $name not logged in; li=$li hba=$hba");
+      push (@{$REPORT2{$name}}, "$name not logged in at $label; li=$li hba=$hba");
+      $hba_problems++;
+    }
+
+    if ($def ne 'YES')
+    {
+      push (@{$REPORT1{$label}}, "$label host $name not defined (registered); Defined=$def hba=$hba");
+      $hba_problems++;
+
+      if ($name =~ /^[a-fA-F0-9:]+$/)
+      { # this host is not yet known, but it must be zoned, so lookup zoning files
+        my ($uid, $wwnn, $wwpn)= &EMC::Config::Port::_split_FC_uid ($hba);
+	$not_registered{$uid}= [$sys, $sp, $port, $wwnn, $wwpn, $uid];
+        push (@{$REPORT2{$uid}}, "$name not defined (registered) at $label; Defined=$uid hba=$uid");
+      }
+      else
+      {
+        push (@{$REPORT2{$name}}, "$name not defined (registered) at $label; Defined=$def hba=$hba");
+      }
+    }
+
+  }
+ 
+  foreach my $hba (sort keys %not_registered)
+  {
+    # my ($uid, $wwnn, $wwpn)= &EMC::Config::Port::_split_FC_uid ($hba);
+    # push (@{$REPORT2{$hba}}, "wwnn=$wwnn wwpn=$wwpn");
+    my @res_wwn= &find_zones ($not_registered{$hba}, $sp_wwns);
+    # my @res_wwpn= &find_zones ($wwpn, $sp_wwns);
+
+    push (@{$REPORT2{$not_registered{$hba}->[5]}}, "wwn found in these zones", @res_wwn) if (@res_wwn);
+    # push (@{$REPORT2{$uid}}, "wwpn $wwpn found in these zones", @res_wwpn) if (@res_wwpn);
+  }
+
+  my $severity= 'OK';
+  $severity= 'WARNING' if ($hba_problems);
+  $severity= 'CRITICAL' if ($sp_link_problems);
+
+  my @ts= localtime (time ());
+  ## print F "\n\n", '='x72, "\n";
+  printf F ("%s - %04d%02d%02dT%02d%02d%02d\n\n", $severity, $ts[5]+1900, $ts[4]+1, $ts[3], $ts[2], $ts[1], $ts[0]);
+  print F "connectivity status summary\n\n";
+  print F "sp_link_problems: $sp_link_problems\n";
+  print F "hba_problems: $hba_problems\n";
+  print F "\n";
+
+  print F "SP port problems\n";
+  &print_report (*F, \%REPORT1);
+
+  print F "host problems\n";
+  &print_report (*F, \%REPORT2);
+}
+
+sub print_report
+{
+  local *F= shift;
+  my $REPORT= shift;
+
+  foreach my $label (sort keys %$REPORT)
+  {
+    print F $label, ":\n";
+    foreach my $l (@{$REPORT->{$label}})
+    {
+      print F $l, "\n";
+    }
+    print F "\n";
+  }
+}
+
+sub find_zones
+{
+  my $hba= shift;
+  my $sp_wwns= shift;
+
+  my ($sys, $sp, $port, $wwnn, $wwpn)= @$hba;
+
+  print STDERR "searching wwnn $wwnn or wwpn $wwpn\n";
+## print STDERR "sp_wwns: ", Dumper ($sp_wwns), "\n";
+  my @res= ();
+  foreach my $zone_file (sort keys %ZONE_FILES)
+  {
+    my $z;
+    unless (defined ($z= $ZONE_FILES{$zone_file}))
+    { # load zone file if not already loaded
+      $z= $ZONE_FILES{$zone_file}= new AIX::NIM::Config;
+      $z->get_config ($zone_file);
+      print STDERR "loading zone_file $zone_file\n";
+    }
+
+    next unless (defined ($z= $ZONE_FILES{$zone_file}));
+    # TODO: this should be an error
+
+    ## print STDERR __LINE__, " searching wwn $wwn in $zone_file\n";
+    my @objects= $z->select_objects ('class' => 'cfg', 'type' => 'zone');
+
+    ## print STDERR __LINE__, " found objects @objects\n";
+    foreach my $object (@objects)
+    {
+      ## print STDERR __LINE__, " found object $object\n";
+      my $fabric= $object->av ('fabric');
+      my $zone= $object->av ('name');
+      my @wwns= $object->av ('wwn');
+
+      my ($found_wwnn, $found_wwpn, $found_sp_wwn);
+      foreach my $f_wwn (@wwns)
+      {
+	$found_wwnn= 1 if ($wwnn eq $f_wwn);
+	$found_wwpn= 1 if ($wwpn eq $f_wwn);
+	$found_sp_wwn= $f_wwn if (exists ($sp_wwns->{$f_wwn}));
+      }
+
+# ZZZ
+      my $x;
+      if (($found_wwnn || $found_wwpn) && $found_sp_wwn)
+      {
+        foreach my $x (@{$sp_wwns->{$found_sp_wwn}})
+        {
+          if ($x->[1] eq $sys
+	      && $x->[2] eq $sp
+	      && $x->[3] eq $port
+             )
+          { # given zone matches search wwn and any of the storage system's wwns
+            push (@res, "wwn=(". join (' ', @wwns). ") fabric=$fabric zone=$zone sys=$sys sp=$sp port=$port zone_type=".$x->[0])
+          }
+        }
+      }
+    }
+  }
+
+  (wantarray) ? @res : \@res;
+}
+
+sub sum_up_disks
+{
+  my $label= shift;
+  my $disks= shift;
+  my $raidgroups= shift;
+
+## print_refs (*STDOUT, 'XXdisks', $disks);
+## print_refs (*STDOUT, 'XXraidgroups', $raidgroups);
+
+  # analyze disk data
+  my $dc= $disks->{'columns'};
+  my $di= $disks->{'index'};
+  my $drows= $disks->{'rows'};
+
+## print_refs (*STDOUT, 'disk_index', $di);
+
+  my $di_p= $di->{'prod'};
+  my $di_c= $di->{'capacity'};
+  my $di_s= $di->{'state'};
+  my $di_rg= $di->{'rg_id'};
+
+## print join (' ', 'indizes:', $di_p, $di_c, $di_s, $di_rg), "\n";
+
+  # statistics by product and state
+  my $cnt= {};
+  my $cap= {};
+
+  # total statistix
+  my %state= ();
+  my %s_capa= ();
+  my $t_cap= 0;
+  my $t_cnt= 0;
+  my $cnt_empty= 0;
+  foreach my $drow (@$drows)
+  {
+    my ($prod, $capacity, $state, $rg)= map { $drow->[$_] } ($di_p, $di_c, $di_s, $di_rg);
+    $capacity *= 1048576;
+
+    if ($state eq 'Empty')
+    { # well, an empty slot shouldn't count much
+      $cnt_empty++;
+      next;
+    }
+
+    if ($state eq 'Unbound' && $rg ne 'none')
+    { # A disk may be in 'Unbound' state but belong to a valid raid
+      # group.  Their capacity is summed up as a raid group.   The
+      # rg_id field of Disks that are not part of a raid group is
+      # 'none', so filter out unound disks in valid raid groups.
+
+      ## print join (' ', __LINE__, '>> skip unbound rg:', @$drow), "\n";
+      # next;
+    }
+
+    ## print "row=$row ", join (' ', $prod, $capacity, $state, '|', @$drow), "\n";
+
+    $state{$state}++;
+    $s_capa{$state} += $capacity;
+    $t_cap += $capacity;
+    $t_cnt++;
+
+    $cnt->{$prod}->{$state}++;
+    $cap->{$prod}->{$state} += $capacity;
+
+    $cnt->{$prod}->{$S_TOTAL}++;
+    $cap->{$prod}->{$S_TOTAL} += $capacity;
+  }
+
+  ## &print_refs (*STDOUT, 'cnt' => $cnt);
+  ## &print_refs (*STDOUT, 'cap' => $cap);
+
+  # analyze raid group data
+  my $rc= $raidgroups->{'columns'};
+  my $ri= $raidgroups->{'index'};
+  my $rrows= $raidgroups->{'rows'};
+
+  my $ri_i= $ri->{'rg'};
+  my $ri_p= $ri->{'prod'};
+  my $ri_r= $ri->{'mb_raw'};
+  my $ri_c= $ri->{'mb_cap'};
+  my $ri_f= $ri->{'mb_free'};
+  my $ri_fc= $ri->{'mb_free_cont'};
+  my $ri_t= $ri->{'rt'};
+
+  foreach my $rrow (@$rrows)
+  {
+    my ($rg_id, $prod, $rt)= map { $rrow->[$_] } ($ri_i, $ri_p, $ri_t);
+    my ($raw, $net_cap, $free)= map { $rrow->[$_] * 1048576 } ($ri_r, $ri_c, $ri_f);
+
+    next if ($rt eq 'Unbound' # capacity of unbound RGs is calculated as unbound Disks
+             || $rt eq 'hot_spare' # capacity of hot_spare RGs is calculated under hot_spare Disks
+            );
+
+# print __LINE__, " RG: ", join (' ', $rg_id, $prod, $raw, $net_cap, $free), "\n";
+    # $free is net space, so we need to calculate raw space free to compare the stuff
+    # otherwise used space would include raid overhead
+    $free= int ($free * $raw/$net_cap) if ($net_cap);
+
+    $cap->{$prod}->{'used'} += $raw - $free;
+    $cap->{$prod}->{'free'} += $free;
+
+    $s_capa{'used'} += $raw - $free;
+    $s_capa{'free'} += $free;
+  }
+
+  # print summary data
+  ## my @state_list= sort keys %state;
+  my @state_list= @STATE_LIST;
+
+  my $now= time ();
+  print "summary generated: ", &ts ($now), " for $label\n";
+  printf ("%-32s %15s %7s $F_CAP_S %6s\n", 'prod', 'state', 'count', 'capacity', 'pct');
+  foreach my $prod (sort keys %$cnt)
+  {
+    my $c= $cnt->{$prod};
+    my $s= $cap->{$prod};
+
+    my $t_free= 0;
+    foreach my $state (@state_list)
+    {
+      my $cnt= $c->{$state};
+      # XXX: next if ($cnt == 0 && exists ($DONT_SHOW_STATE{$state}));
+
+      my $x= $s->{$state};
+      my $pct= $x * 100 / $t_cap;
+      printf ("%-32s %15s %7d $F_CAP_F %6.2f\n", $prod, $state, $cnt, $x/$display_factor, $pct);
+      $t_free += $x if ($state eq 'Unbound' || $state eq 'free');
+    }
+
+    my $x= $s->{$S_TOTAL};
+
+    my $pct_free= $t_free * 100 / $t_cap;
+    printf ("%-32s %15s %7s $F_CAP_F %6.2f\n", $prod, $S_T_FREE, '?', $t_free/$display_factor, $pct_free);
+
+    my $pct= $x * 100 / $t_cap;
+    printf ("%-32s %15s %7d $F_CAP_F %6.2f\n", $prod, $S_TOTAL, $c->{$S_TOTAL}, $x/$display_factor, $pct);
+
+    print "\n";
+  }
+
+    my $t_free= 0;
+  # XXX: summary block
+  {
+    foreach my $state (@state_list)
+    {
+      my $x= $s_capa{$state};
+      my $pct= ($t_cap) ? ($x * 100 / $t_cap) : 0;
+      printf ("%-32s %15s %7d $F_CAP_F %6.2f\n", 'all', $state, $state{$state}, $x/$display_factor, $pct);
+      $t_free += $x if ($state eq 'Unbound' || $state eq 'free');
+    }
+  
+    my $pct_free= ($t_cap) ? ($t_free * 100 / $t_cap) : 0;
+    printf ("%-32s %15s %7s $F_CAP_F %6.2f\n", 'all', $S_T_FREE, '?', $t_free/$display_factor, $pct_free);
+
+    my $pct= ($t_cap) ? ($t_cap * 100 / $t_cap) : 100; # XXX: I wonder what that will be ...
+    printf ("%-32s %15s %7d $F_CAP_F %6.2f\n", 'all', $S_TOTAL, $t_cnt, $t_cap/$display_factor, $pct);
+
+    print "empty slots: $cnt_empty\n";
+    print "\n";
+  }
+
+  # optionally, if option -f is used
+  # print raid group information which meet free space criteria
+  if (# $state eq 'free' &&
+      defined ($show_rg_min_free)
+     )
+  {
+    my $header= 0;
+    foreach my $rrow (@$rrows)
+    {
+      my $ri_num= $ri->{'num_disks'};
+      my ($rg_id, $prod, $rt, $num)= map { $rrow->[$_] } ($ri_i, $ri_p, $ri_t, $ri_num);
+      my ($raw, $net_cap, $free, $free_cont)= map { $rrow->[$_] * 1048576 } ($ri_r, $ri_c, $ri_f, $ri_fc);
+
+      next if ($rt eq 'hot_spare');
+      next if ((($show_contiguous) ? $free_cont : $free) < $show_rg_min_free);  # continuos blocks TODO: also total blocks, e.g. for reorg
+      next if ($show_disk_type && !($prod =~ /$show_disk_type/i));
+
+      unless ($header)
+      {
+        printf ("\n\nRaid Groups with min %d %s space free\n", $show_rg_min_free/$display_factor, $display_unit);
+        printf ("%16s %3s %9s %9s %9s %9s %9s\n", 'prod', 'rg', 'rt', 'raw', 'net_cap', 'free', 'cont');
+	$header= 1;
+      }
+
+      if ($rt eq 'Unbound')
+      { # Capacity values for RaidGroup in Unbound state need to be
+        # fixed up a little
+	if ($num > 2)
+	{
+          $net_cap= int ($raw*($num-1)/$num);  # assuming r5
+	  $free_cont= $free= $net_cap;
+	}
+      }
+
+      printf ("%16s %3d %9s %9d %9d %9d %9d\n",
+              $prod, $rg_id, $rt, $raw/$display_factor, $net_cap/$display_factor,
+              $free/$display_factor, $free_cont/$display_factor);
+    }
+
+    print "\n";
+  }
+
+  { 'FREE' => $t_free, 'empty' => $cnt_empty };
+}
+
+=pod
+
+=head2 $proj= sum_up_luns ($label, $luns)
+
+returns hash ref containing bytes (raw) per project name
+
+=cut
+
+sub sum_up_luns
+{
+  my $label= shift;
+  my $luns= shift;
+
+  my $li= $luns->{'index'};
+  my $lrows= $luns->{'rows'};
+
+## print_refs (*STDOUT, 'disk_index', $di);
+
+  my %projects= ();
+  my @li= map { $li->{$_} } qw(san rt mb mb_raw project priv);
+  ## print join (' ', @li), "\n";
+
+  foreach my $row (@$lrows)
+  {
+# print "row: ", join ('|', @$row), "\n";
+    my ($san, $rt, $mb, $mb_raw, $project, $priv)= map { $row->[$_]; } @li;
+    next if ($priv eq 'Meta');
+
+    $project ||= 'unknown';
+    # print join (';', @$row), "\n" if (!$project || $project eq 'SANOPS'); # || $priv ne 'No');
+
+    $mb_raw= $mb if ($rt eq 'HS' && $mb_raw eq '');
+
+    # TODO: navicli does not show raw capacity values for reserved LUN pool
+    # BUG: raw size calculation depends on RaidGroup, so *1.25 may be a typical value
+    $mb_raw= $mb if ($project eq 'SANOPS' && $mb_raw eq '');
+
+    $mb *= 1048576; $mb_raw *= 1048576;
+
+    ## print join (' ', $rt, $mb, $mb_raw, $project, $priv), "\n" if ($project eq 'SANOPS');
+    $projects{$project} += int ($mb_raw);
+  }
+
+  my $sum= 0;
+  foreach my $project (sort keys %projects)
+  {
+    my $c= $projects{$project};
+    $sum += $c;
+    printf ("%-10s $F_CAP_F %s\n", $project, $c/$display_factor, $display_unit);
+  }
+
+  printf ("%-10s $F_CAP_F %s\n", '_all_', $sum/$display_factor, $display_unit);
+
+  \%projects;
+}
+
+sub ts
+{
+  my $t= shift;
+
+  $t= time () unless (defined ($t));
+  my @t= localtime ($t);
+
+  sprintf ("%04d%02d%02dT%02d%02d%02d", $t[5]+1900, $t[4]+1, $t[3], $t[2], $t[1], $t[0]);
+}
+
+__END__
+
+=pod
+
+=head1 REFERENCES
+
+For a discussion about unit sizes, see
+  http://en.wikipedia.org/wiki/Terabyte
+
+=head1 AUTHOR
+
+Gerhard Gonter <ggonter@cpan.org>
+
+For more information, see <URL:http://aix-pm.sourceforge.net/>
+
+=over

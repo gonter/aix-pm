@@ -1,0 +1,17 @@
+/* $Id: vx_task.cre,v 1.1 2007/06/03 15:44:28 gonter Exp $ */
+
+/* description of a task being performed */
+class vx_task {
+  vchar task_id [32];
+  vchar status [32];
+  vchar ts_started [32];
+  vchar ts_finished [32];
+  vchar result [32];
+  vchar protocol_file [1024];
+  long pid;
+  vchar operation [1024];
+  vchar par1 [1024];
+  vchar par2 [1024];
+  vchar comment [1024];
+};
+

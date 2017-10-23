@@ -1,0 +1,69 @@
+
+=pod
+
+=head1 ABSTRACT
+
+$Id: README,v 1.1 2007/06/03 16:56:23 gonter Exp $
+
+This is a small collection of Perl modules and scripts that deal
+with AIX NIM.
+
+=head1 MODULES
+
+There is no installation procedure yet, so just drop the Perl modules
+into a directory where Perl will find them.  These should be placed
+in one of Perl's library directories, e.g.
+/usr/local/lib/perl5/site_perl/AIX/NIM/
+
+  NIM/Config.pm     module AIX::NIM::Config
+  NIM/Object.pm     module AIX::NIM::Object
+
+NIM stores it's data in ODM files and can be queried using the AIX
+lsnim command.  These modules interpret the output of the lsnim
+command.  lsnim displays NIM configuration in a particular stanza
+format.  Since this format is also useful for other applications
+where configuration data needs to be recorded, I'm using these
+modules also in other contexts, even when they have nothing to do
+with AIX.
+
+=head2 NIM/Config.pm
+
+Main configuration module
+
+=head2 NIM/Object.pm
+
+Describes one NIM object, e.g. a single machine or backup
+
+=head1 SCRIPTS
+
+=head2 lsnim2html.pl
+
+Transcribes NIM configuration into cross reference HTML form.
+
+=head2 mknim.pl
+
+Intended for automation of administrative tasks, mainly for
+periodic mksysb backups.  This script needs an ODM database
+called vx_task where it records mksysb backup session data
+and a file named /etc/nimpolicy where an administrator
+describes the backup policy which mknim.pl then tries to
+implement.
+
+=head1 TODO
+
+There's a lot to do, especially the mknim.pl script may see
+some changes.  ODM database creation and policy file need
+some explanation.
+
+=head1 BUGS, FEATURE REQUESTS, etc.
+
+If possible, use the project's web site to report bugs
+or place feature requests.  Also, updates may be posted
+there too.
+
+  http://sourceforge.net/projects/aix-pm
+
+=head1 AUTHOR
+
+Gerhard Gonter <ggonter@cpan.org>
+

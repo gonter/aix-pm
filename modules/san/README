@@ -1,0 +1,5 @@
+Various modules (and possibly scripts) dealing with various SAN components.
+These modules are not necessarily related to AIX in any way.
+
+
+$Id: README,v 1.1 2007/02/05 00:32:30 gonter Exp $

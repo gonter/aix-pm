@@ -1,0 +1,8 @@
+$Id: README,v 1.1 2010/10/21 11:02:16 gonter Exp $
+
+== disk wiping ==
+
+HP/ACU.pm, HP/ACU/*.pm, and scripts/viper.pl are used to semiautomatically
+overwrite disks with various patterns using "shred" and the array CLI
+"hpacucli".
+

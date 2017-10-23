@@ -1,0 +1,18 @@
+$Id: README,v 1.1 2008/12/09 16:47:21 gonter Exp $
+
+=head1 Quick'n'dirty hacks
+
+Small scripts to solve small problems
+
+=head1 nim/
+
+=head2 lsnim.pl
+
+Script to sort output of "lsnim -t lpp_source" which is useful when
+it's called by a NIM client.
+
+=head1 linux/lvm/
+
+=head2 chfs.pl
+
+Script to simulate "chfs -a size=..." for a Linux LVM

@@ -1,0 +1,6 @@
+short;long;note;tel
+at;Austria;"story about Austria; long story";+43
+de;Germany;"story about Germany; this goes on,
+don't get me started...";+49
+fr;France;"dunno";+33
+Id;CSV_ID;"$Id: example1.csv,v 1.2 2015/11/11 05:22:46 gonter Exp $";

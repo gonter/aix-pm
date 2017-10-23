@@ -1,0 +1,544 @@
+#!/usr/bin/perl
+# $Id: salt,v 1.27 2012/02/28 17:36:57 gonter Exp $
+
+=pod
+
+=head1 NAME
+
+salt.pl  --  Storage Array Log Tracker
+
+=head1 USAGE
+
+
+=cut
+
+use strict;
+
+use lib '/root/work/perl';
+
+use FileHandle;
+use AIX::NIM::Config;
+## use Util::print_refs;
+use Data::Dumper;
+$Data::Dumper::Indent= 1;
+
+## use EMC::log;
+use SAN::Policy;
+use EMC::Config;
+use EMC::CX;
+
+# Configuration
+my $POLICY_FILE= '/etc/sanpolicy';
+my $MAIL= '/usr/bin/mail';
+my $genpassw= '/usr/local/bin/genpassw';
+my $log_level= 'local2.debug';
+my $log_tag= 'san-monitor';
+my $logger= '/usr/bin/logger';
+my %CLI=
+(
+  'navicli'     => '/usr/bin/navicli',
+  'navijavacli' => 'java -jar /usr/lpp/NAVICLI/navicli.jar',
+  'naviseccli'  => '/usr/bin/naviseccli',
+);
+
+my $NAVIUSER= $ENV{'NAVIUSER'};
+my $NAVIPASS= $ENV{'NAVIPASS'};
+
+my $max_age_policy= 300;
+my $max_age_cache= 3600;
+my $refresh_time= 60;
+
+# Setup
+my @report;
+
+# policy handling/refreshing
+# these variables are populated by calling $xp->refresh_policy ();
+my $policy_refresh= 0;
+
+my $signal_received;
+my $debug_crus= 1;    # flag indicating to dump debug info about CRU data structures upon next check
+my $debug_disks= 1;   # same for disks
+my $debug_cmd= 1;
+
+my $cache_refresh= 0;
+
+my $cache_files_old=
+{
+  'crus' => { 'cli' => 'navicli', 'scmd' => 'getcrus', 'refresh' => 300, 'action' => sub { &check_crus (@_); }, },
+  'rg'   => { 'cli' => 'navicli', 'scmd' => 'getrg', },
+  'lun'  => { 'cli' => 'navicli', 'scmd' => 'getlun', },
+  'disk' => { 'cli' => 'navicli', 'scmd' => 'getdisk', },
+  'sg'   => { 'cli' => 'navicli', 'scmd' => 'storagegroup -list -host', },
+  'port-all'     => { 'cli' => 'navicli',     'scmd' => 'port -list -all', 'refresh' => 300, },
+  'metalun-list' => { 'cli' => 'navijavacli', 'scmd' => 'metalun -list', },
+};
+
+my $cache_files=
+{
+  'crus' => { 'cli' => 'naviseccli', 'scmd' => 'getcrus', 'refresh' => 300, 'action' => sub { &check_crus (@_); }, },
+  'rg'   => { 'cli' => 'naviseccli', 'scmd' => 'getrg', },
+  'lun'  => { 'cli' => 'naviseccli', 'scmd' => 'getlun', },
+  'disk' => { 'cli' => 'naviseccli', 'scmd' => 'getdisk', 'action' => sub { &check_disks (@_); }, },
+  'sg'   => { 'cli' => 'naviseccli', 'scmd' => 'storagegroup -list -host', },
+  'port-list-all' => { 'cli' => 'naviseccli', 'scmd' => 'port -list -all', },
+  'port-list-sp'  => { 'cli' => 'naviseccli', 'scmd' => 'port -list -sp', },
+  'metalun-list'  => { 'cli' => 'naviseccli', 'scmd' => 'metalun -list', },
+};
+
+autoflush STDOUT 1;
+autoflush STDERR 1;
+
+# Command Line Arguments
+my @PARS= ();
+my $op= 'logwatch';
+my $op_mode= 'normal';
+my $watch_list= undef;
+my $use_watch_list= 0;
+
+my $arg;
+while ($arg= shift (@ARGV))
+{
+  if ($arg =~ /^-/)
+  {
+    if ($arg =~ /-(merge|refresh)/)
+    {
+      $op= $1;
+    }
+    elsif ($arg eq '-X')
+    {
+      $op_mode= 'X';
+    }
+    elsif ($arg eq '-w')
+    {
+      # $watch_list->{shift (@ARGV)}= 1;
+      $use_watch_list= 1;
+    }
+    else
+    {
+      &usage ();
+      exit (0);
+    }
+    next;
+  }
+  push (@PARS, $arg);
+}
+
+my $xp= new SAN::Policy ('policy_file' => $POLICY_FILE, 'system' => 'EMC');
+
+if ($op eq 'merge')
+{
+  my $ll= {};
+  &merge_log_lines ($ll, @PARS);
+  &print_log_lines ($ll);
+}
+elsif ($op eq 'refresh')
+{
+  $debug_cmd= 1;
+
+  my $dump_file= ($op_mode eq 'X') ? ('@DEBUG.salt.conf.' . time ()) : undef;
+
+  $policy_refresh= $xp->refresh_policy ($dump_file);
+  &refresh_cache (1, @PARS);
+}
+elsif ($op eq 'logwatch')
+{
+  map { $watch_list->{$_}= 1; } @PARS;
+  &start_logger ();
+  &monitor_loop ();
+}
+
+exit;
+
+sub usage
+{
+  system ("perldoc '$0'");
+}
+
+
+sub start_logger
+{
+  # open (LOG, "|$logger -t '$log_tag' -p '$log_level'");
+  open (LOG, "|/usr/bin/cat >>/var/log/salt.logger");
+  autoflush LOG 1;
+}
+
+sub sig_handler
+{
+  $signal_received= shift;
+}
+
+sub print_debug
+{
+  my $fnm= '@DEBUG.salt.' . time();
+
+  open (DEBUG, '>'.$fnm) or return;
+  print DEBUG 'xp=', Dumper ($xp), "\n";
+  print DEBUG 'cache_files=', Dumper ($cache_files), "\n";
+  close (DEBUG);
+
+  $debug_crus= $debug_disks= 1;
+}
+
+sub monitor_loop
+{
+  $SIG{'HUP'}=  \&sig_handler;
+  $SIG{'USR1'}= \&sig_handler;
+  $SIG{'USR2'}= \&sig_handler;
+
+## print __LINE__, "\n";
+  print LOG "monitoring started\n";
+
+  my $emc_sps= {};
+  my @emc_sps= ();
+
+  while (1)
+  {
+# print __LINE__, "\n";
+    if (defined ($signal_received))
+    {
+      print __LINE__, " signal_received=$signal_received, ", scalar localtime (time()), "\n";
+
+         if ($signal_received eq 'HUP')  { $policy_refresh= $xp->{'policy_refresh'}= 0; } # XXX
+      elsif ($signal_received eq 'USR1') { $cache_refresh= 0; }
+      elsif ($signal_received eq 'USR2') { &print_debug (); } # this might cause a timing problem
+      else { print "ATTN: unknwon signal $signal_received\n"; }
+
+      $signal_received= undef;
+    }
+
+    if ($policy_refresh + $max_age_policy < time ())
+    {
+## print __LINE__, " refreshing policy\n";
+
+      $policy_refresh= $xp->refresh_policy ();
+
+      $emc_sps= $xp->{'emc_sps'};
+      @emc_sps= sort keys %$emc_sps;
+## print __LINE__, " emc_sps: ", join (', ', @emc_sps), "\n";
+    }
+
+    if ($cache_refresh + $refresh_time < time ())
+    {
+## print __LINE__, " refreshing cache: $cache_refresh $refresh_time ", scalar localtime, "\n";
+      &refresh_cache ();
+    }
+
+## print __LINE__, " emc sps loop: emc_sps=", join (' ', @emc_sps), "\n";
+    my $ll= {};
+    my $cnt;
+    foreach my $sp (@emc_sps)
+    {
+## print __LINE__, " sp: $sp\n";
+      my $emclp= $emc_sps->{$sp}->{'log'};
+      my @l= $emclp->get_events ();
+      $cnt += &collect_log_lines ($ll, $sp, @l);
+    }
+
+    if ($cnt)
+    {
+      foreach my $ts (sort keys %$ll)
+      {
+        my $lines= $ll->{$ts};
+        foreach my $l (@$lines)
+        {
+          print $ts, " ", $l, "\n";
+
+          eval
+	  {
+            print LOG $ts, " ", $l, "\n";
+	  };
+	  if ($@)
+	  {
+	    print "logging failed! l=[$l]\n";
+	    &start_logger ();
+	  }
+
+          if ($l =~ /\(71370006\)MetaLUN Stripe Expansion Completed: (\d+)\./)
+	  {
+	    my $lun= $1;
+	    push (@report, $l);
+	  }
+	  elsif ($l =~ /Enclosure (\d+) Disk (\d+) \(645\) CRU Bound 0x00 (..)(....) (..)(....)/)
+	  {
+	    my ($encl, $disk, $rg_hex, $x1, $lun_hex, $x2)= ($1, $2, $3, $4, $5, $6);
+	    my $rg= hex ($rg_hex);
+	    my $lun= hex ($lun_hex);
+
+	    push (@report, $l);
+	  }
+
+        }
+      }
+
+    }
+
+    if (@report)
+    {
+      &report (@report);
+      @report= ();
+    }
+    sleep (120);
+  }
+}
+
+sub report
+{
+  my $report_email= $xp->{'report_email'};
+
+  print __LINE__, " >>>>> report() report_email='$report_email'\n";
+  open (MAIL, "|$MAIL -s 'emc event' $report_email") or return;
+  print __LINE__, " >>>> sending report to $report_email ", scalar localtime, "\n";
+  print LOG "sending report to $report_email\n";
+  foreach (@_)
+  {
+    print MAIL $_, "\n";
+  }
+  close (MAIL);
+}
+
+sub print_log_lines
+{
+  my $ll= shift;
+
+      foreach my $ts (sort keys %$ll)
+      {
+        my $lines= $ll->{$ts};
+        foreach my $l (@$lines)
+        {
+          print $ts, " ", $l, "\n";
+        }
+      }
+}
+
+sub merge_log_lines
+{
+  my $ll= shift;
+  my %par= @_;
+
+  my ($host, $fnm);
+  foreach $host (keys %par)
+  {
+    my $fnm= $par{$host};
+    open (FI, $fnm) or die; # for now...
+    my @lines= <FI>;
+    close (FI);
+
+    &collect_log_lines ($ll, $host, @lines);
+  }
+}
+
+sub collect_log_lines
+{
+  my $ll= shift;
+  my $host= shift;
+
+  my $cnt= 0;
+  my $l;
+  foreach $l (@_)
+  {
+    if ($l =~ m#(\d\d)/(\d\d)/(\d{4})\s+(\d\d:\d\d:\d\d)\s+(.+)#)
+    {
+      my ($mon, $day, $year, $time, $msg)= ($1, $2, $3, $4, $5);
+      my $ts= sprintf ("%04d-%02d-%02dT%s", $year, $mon, $day, $time);
+      $msg=~ tr/[ \t]/ /s;
+      push (@{$ll->{$ts}}, $host . ' ' . $msg);
+      $cnt++;
+    }
+  }
+  $cnt;
+}
+
+sub refresh_cache
+{
+  my $force_refresh= shift;
+
+  my $emcs= $xp->{'emcs'};
+
+  my @cache_list= ();
+  my $call_make= 0;
+
+  my %cnt= ();
+  my @emcs= (@_) ? @_ : sort keys %$emcs;
+  foreach my $emc (@emcs)
+  {
+## print __LINE__, " emc='$emc'\n";
+    my $c= &refresh_cache_emc ($emcs->{$emc}, $force_refresh, @cache_list);
+    $cnt{$emc}= $c;
+
+    $call_make++ if ($c > 1);
+  }
+
+  print LOG "cache refreshed for ", join (' ', %cnt), "\n";
+  # print     "cache refreshed for ", join (' ', %cnt), "\n";
+
+  if ($call_make && -f 'Makefile')
+  {
+    if ($debug_cmd)
+    {
+      system ("make");
+    }
+    else
+    {
+      system ("make >/dev/null 2>&1");
+    }
+  }
+
+  $cache_refresh= time ();
+}
+
+sub refresh_cache_emc
+{
+  my $emc= shift;
+  my $force_refresh= shift;
+  my @cache_list= @_;
+
+  @cache_list= keys %$cache_files unless (@cache_list);
+
+## &print_refs (*STDOUT, 'emc', $emc);
+
+  my ($cache, $cp, $ips)= $emc->get ('cache', '_cache_', '_ip_');
+
+  my $count= 0;
+
+  CF: foreach my $cf (@cache_list)
+  {
+## print __LINE__, " cf=$cf\n";
+    my $cf_obj= $cache_files->{$cf};
+    my $cf_fp= $cache .'/'. $cf;
+    my ($cf_cp, $cf_mtime);
+    my $do_refresh= 0;
+
+    $do_refresh= 1 if ($cache_refresh == 0 || $force_refresh); # general refresh requested
+
+    if (exists ($cp->{$cf}))
+    {
+      $cf_cp= $cp->{$cf};
+      my @cf_st= stat ($cf_fp);
+      $cf_mtime= $cf_st[9];
+      my $refresh= $cf_obj->{'refresh'};
+      $refresh= $max_age_cache unless ($refresh);
+
+## print __LINE__, " cf='$cf' cf_mtime=$cf_mtime refresh='$refresh' cf_cp_mtime=", $cf_cp->{'mtime'}, "\n";
+      if ($cf_mtime + $refresh < time ())
+      {
+	$do_refresh= 1;
+      }
+    }
+    else
+    {
+      $do_refresh= 1;
+      $cf_cp= $cp->{$cf}= { 'file' => $cf_fp, 'refresh' => 1 };
+    }
+
+## print __LINE__, " do_refresh=$do_refresh cf='$cf' cf_fp='$cf_fp' cf_cp='$cf_cp' cf_mtime='$cf_mtime'\n";
+    my $addr= $ips->[0];
+
+    if ($do_refresh)
+    {
+      my ($cli, $scmd, $action)= map { $cf_obj->{$_} } qw(cli scmd action);
+
+      my $cmd= $CLI{$cli};
+
+      if ($cli eq 'navijavacli')
+      {
+	unless ($NAVIUSER and $NAVIPASS)
+	{
+	  print "ATTN: environment variables NAVIUSER and NAVIPASS need to be set in order to retrieve '$scmd'\n";
+	  next CF;
+	}
+        $cmd .= " -user $NAVIUSER -password $NAVIPASS";
+      }
+      $cmd .= " -h $addr $scmd >$cf_fp.tmp";
+
+print __LINE__, " >>>> ", scalar localtime (time ()), " cmd='$cmd'\n" if ($debug_cmd);
+      $cf_cp->{'mtime'}= time ();
+      $cf_cp->{'mtime_s'}= scalar localtime ($cf_cp->{'mtime'});
+      $cf_cp->{'refresh'}= 0;
+      $count++;
+
+## push (@report, scalar localtime (time ()) . ' '. $cmd);
+      system ($cmd);
+      unlink ($cf_fp);
+      rename ("$cf_fp.tmp", $cf_fp);
+
+      if (defined ($action))
+      {
+	# print __LINE__, " $_ action= '$action' '", ref($action), "'\n";
+	if (ref($action) eq 'CODE')
+	{
+	  $action->($emc, $cf_cp);
+	}
+      }
+    }
+  }
+
+  $count;
+}
+
+sub ts
+{
+  my $t= shift;
+
+  $t= time () unless (defined ($t));
+  my @t= localtime ($t);
+
+  sprintf ("%04d%02d%02dT%02d%02d%02d", $t[5]+1900, $t[4]+1, $t[3], $t[2], $t[1], $t[0]);
+}
+
+sub check_disks
+{
+  my $emc= shift;
+  my $cf_cp= shift;
+
+  my $emc_name= $emc->{'name'};
+
+  my $now= time ();
+  my $config= new EMC::Config;
+
+## print join (' ', __FILE__, __LINE__, 'emc_name', $emc_name), "\n";
+  my $r= $config->file_splitter ($cf_cp->{'file'});
+  $config->analyze_config_data ($r);
+  
+  if ($debug_disks)
+  {
+    open (DBG, ">\@DEBUG.salt.disks.emc-$emc_name.$now") or return;
+    print DBG Dumper ($config), "\n";
+    close (DBG);
+    $debug_disks= 0;
+  }
+}
+
+sub check_crus
+{
+  my $emc= shift;
+  my $cf_cp= shift;
+
+  my $emc_name= $emc->{'name'};
+
+  my $config= new EMC::Config;
+
+  my $r= $config->file_splitter ($cf_cp->{'file'});
+  $config->analyze_config_data ($r);
+
+  open (EMC_CRU_SUMMARY, ">/www/san/storage/$emc_name/crus"); # TODO this should be read from the policy file
+  my ($not_ok, $log_line, $problems)= $config->EnclosureSummary (*EMC_CRU_SUMMARY, &ts ());
+  print LOG "$emc_name $log_line\n";
+  close (EMC_CRU_SUMMARY);
+
+  if ($debug_crus)
+  {
+    my $now= time ();
+    open (DBG, ">\@DEBUG.salt.crus.emc-$emc_name.$now") or return;
+    print DBG Dumper ($config), "\n";
+    close (DBG);
+    $debug_crus= 0;
+  }
+}
+
+__END__
+
+=pod
+
+=head1 TODOS
+
+* option to choose a specific SP (SP-A or SP-B for EMCs)
