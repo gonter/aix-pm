@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# $Id: csv.pl,v 1.50 2017/08/02 10:10:50 gonter Exp $
+# $Id: csv.pl,v 1.51 2017/11/27 12:29:10 gonter Exp $
 
 =pod
 
@@ -89,8 +89,8 @@ my $sort_numeric= 0;
 my $strip_quotes= 0;
 my $view= 'matrix'; # values: matrix, extended, header, json, dumper
 my $all= 0; # for extend view, sofar...
-my $find_pattern= undef;
-my $search_string= undef;
+my $find_pattern= undef;   # this is used for a pattern match
+my $search_string= undef;  # this is used to select a certain value in a column
 my $max_items= undef;
 
 sub set_utf8 { $UTF8= 1; binmode (STDOUT, ':utf8'); }

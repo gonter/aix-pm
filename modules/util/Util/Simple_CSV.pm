@@ -442,6 +442,19 @@ sub define_columns
   $obj->{'column_count'}= scalar @columns;
 }
 
+=head2 my $data= $csv->data ()
+
+=cut
+
+sub data
+{
+  my $obj= shift;
+
+  return undef unless (exists ($obj->{data}));
+
+  (wantarray) ? @{$obj->{data}} : $obj->{data};
+}
+
 =head2 $csv->add_row (@data)
 
 add another data line to csv object
