@@ -1,5 +1,5 @@
 #
-# $Id: Simple_CSV.pm,v 1.52 2016/10/16 09:41:47 gonter Exp $
+# $Id: Simple_CSV.pm,v 1.54 2017/11/27 12:39:09 gonter Exp $
 #
 
 use strict;
