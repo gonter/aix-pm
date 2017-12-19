@@ -147,6 +147,9 @@ while (defined (my $arg= shift (@ARGV)))
       elsif ($opt eq 'a') { $all= 1; }
       elsif ($opt eq 'x') { $view= 'extended'; }
       elsif ($opt eq 'J') { $view= 'json'; }
+      elsif ($opt eq 'M') { $view= 'matrix'; }
+      elsif ($opt eq 'R') { $view= 'Redmine'; }
+      elsif ($opt eq 'G') { $view= 'Gnome'; }
       elsif ($opt eq 'D') { $view= 'dumper'; }
       elsif ($opt eq '8') { set_utf8(); }
       elsif ($opt eq '9') { $CSV_SEP= "\t"; }
@@ -298,7 +301,7 @@ if (@sort_columns)
 }
 
 my $d;
-if ($view eq 'matrix')
+if ($view eq 'matrix' || $view eq 'Redmine' || $view eq 'Gnome')
 {
   if ($out_file)
   {
@@ -309,6 +312,7 @@ if ($view eq 'matrix')
   }
   else
   {
+    Util::Matrix::set_border_style ($view);
     $csv->matrix_view(\@columns);
   }
 }
