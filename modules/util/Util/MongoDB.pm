@@ -66,7 +66,7 @@ sub attach
 
   return $mdb unless (defined ($col_name));
 
-  my $col= $mdb->get_collection ($col_name);
+  $col= $mdb->get_collection ($col_name);
 
   if (defined ($col))
   {

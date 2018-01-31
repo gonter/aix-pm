@@ -1,4 +1,6 @@
 #
+
+Util::Matrix::set_border_style ('Redmine');
 # $Id: Matrix.pm,v 1.12 2017/03/26 05:35:49 gonter Exp $
 #
 
@@ -7,12 +9,13 @@ package Util::Matrix;
 my $VERSION= 0.03;
 
 # formatted matrix output
-my $border_left= '| ';
-my $border_inter= ' | ';
-my $border_right= ' |';
+my $border_left=   my $header_left=   '| ';
+my $border_inter=  my $header_inter= ' | ';
+my $border_right=  my $header_right= ' |';
 my $border_lx= '+';
 my $border_rx= '-+';
 my $border_lines= 1;
+my $border_header= 1;
 
 my $header_style= 'default';
 
@@ -52,17 +55,17 @@ sub print
 
     print $fh $hl, "\n" if ($border_lines);
 
-    print $fh $border_left if ($border_left);
+    print $fh $header_left if ($header_left);
     foreach my $n (@$column_names)
     {
-      print $fh $border_inter if ($i);
+      print $fh $header_inter if ($i);
       printf $fh ($fmt_l[$i], $n);
       $i++;
     }
-    print $fh $border_right if ($border_right);
+    print $fh $header_right if ($header_right);
 
     print $fh "\n";
-    print $fh $hl, "\n" if ($border_lines);
+    print $fh $hl, "\n" if ($border_header);
   }
 
   foreach my $row (@$d)
@@ -106,32 +109,52 @@ sub print_hash
   Util::Matrix::print ($column_names, \@d, $fh);
 }
 
+sub set_border_none
+{
+  $header_left= $header_inter= $header_right=
+  $border_left= $border_inter= $border_right= $border_lx= $border_rx= '';
+  $border_lines= $border_header= 0;
+}
+
 sub set_border_style
 {
   my $style= shift;
 
-  if ($style eq 'none')
-  {
-    $border_left= $border_inter= $border_right= $border_lx= $border_rx= '';
-    $border_lines= 0;
-  }
+  if ($style eq 'none') { set_border_none(); }
   elsif ($style eq 'minimal' || $style eq '')
   {
-    $border_left= '';
+    set_border_none();
     $border_inter= ' ';
-    $border_right= '';
-    $border_lx= '';
-    $border_rx= '';
-    $border_lines= 0;
   }
-  else
+  elsif ($style eq 'Redmine')
   { # or $style eq 'default'
-    $border_left= '| ';
+    $header_left=   '|_. ';
+    $header_inter= ' |_. ';
+    $header_right= ' |';
+    $border_left=   '| ';
     $border_inter= ' | ';
     $border_right= ' |';
+    $border_lx= $border_rx= '';
+    $border_lines= $border_header= 0;
+  }
+  elsif ($style eq 'Gnome')
+  { 
+    $header_left=  $border_left=   '| ';
+    $header_inter= $border_inter= ' | ';
+    $header_right= $border_right= ' |';
+    $border_lx= '|:';
+    $border_rx= '-|';
+    $border_lines= 0;
+    $border_header= 1;
+  }
+  else
+  { # or $style eq 'default' or 'matrix'
+    $header_left=  $border_left=   '| ';
+    $header_inter= $border_inter= ' | ';
+    $header_right= $border_right= ' |';
     $border_lx= '+';
     $border_rx= '-+';
-    $border_lines= 1;
+    $border_lines= $border_header= 1;
   }
 }
 
