@@ -95,7 +95,7 @@ sub disconnect_mongodb
 
 Retrieve MongoDB parameters from $config and connect to it and open named collection, if specified.
 
-$config is a hash which provides the fillowing keys:
+$config is a hash which provides the following keys:
  * host
  * db_name: Name of the MongoDB
  * username
