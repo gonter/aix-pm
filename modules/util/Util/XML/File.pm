@@ -80,6 +80,23 @@ print __LINE__, " xmlref: ", main::Dumper ($xmlref) if ($DEBUG > 0);
   return ($xmlref, $xml);
 }
 
+sub save
+{
+  my $fnm= shift;
+  my $xml= shift;
+
+  unless (open (XML, '>:utf8', $fnm))
+  {
+    print "ATTN: can't write to fnm=[$fnm]";
+    return undef;
+  }
+
+  print "saving xml to $fnm\n";
+  print XML $xml;
+  close (XML);
+
+  1;
+}
 
 1;
 
