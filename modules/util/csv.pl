@@ -112,6 +112,7 @@ while (defined (my $arg= shift (@ARGV)))
     elsif ($opt eq 'search' || $opt eq 'select')
     { # TODO: allow multiple searches!
       $search_string= $val || shift (@ARGV);
+      # print __LINE__, " search_string=[$search_string]\n";
     }
     elsif ($opt eq 'max')    { $max_items=     $val || shift (@ARGV); }
     elsif ($opt eq 'hdr')    { $view= 'header'; }
@@ -193,7 +194,7 @@ if (@set_columns)
   $csv->{'no_headings'}= 1;
 }
 
-# print "find_pattern=[$find_pattern] search_string=[$search_string]\n";
+# print __LINE__, " find_pattern=[$find_pattern] search_string=[$search_string]\n";
 
 if (defined ($find_pattern))
 {
@@ -244,14 +245,15 @@ print "procssing find_pattern=[$find_pattern]\n";
 
 if (defined ($search_string))
 {
-# print "procssing search_string=[$search_string]\n";
   my ($field_name, $field_value)= split ('=', $search_string, 2);
+# print __LINE__, " procssing search_string=[$search_string] field_name=[$field_name] field_value=[$field_value]\n";
 
   # the filter is dynamically generated since the field number is only
   # known after the column names are identified!
   sub fidef2
   {
     my $obj= shift;
+# print __LINE__, " in fidef2\n";
 
     my $cols= $obj->{'columns'};
     my $col= 0;
