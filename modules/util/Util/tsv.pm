@@ -7,10 +7,10 @@ sub new
   my $class= shift;
   my $label= shift;
   my $columns= shift;
-  my @par= shift;
+  my @par= @_;
 
   my $obj= { label => $label, cols => $columns, rows => [] };
-  bless $obj, $class;
+  bless ($obj, $class);
   $obj->set(@par);
 
   $obj;
