@@ -7,11 +7,24 @@ sub new
   my $class= shift;
   my $label= shift;
   my $columns= shift;
+  my @par= shift;
 
   my $obj= { label => $label, cols => $columns, rows => [] };
   bless $obj, $class;
+  $obj->set(@par);
 
   $obj;
+}
+
+sub set
+{
+  my $self= shift;
+  my %par= @_;
+
+  foreach my $par (keys %par)
+  {
+    $self->{$par}= $par{$par};
+  }
 }
 
 sub add_items
