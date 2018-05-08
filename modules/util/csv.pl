@@ -93,7 +93,7 @@ my $find_pattern= undef;   # this is used for a pattern match
 my $search_string= undef;  # this is used to select a certain value in a column
 my $max_items= undef;
 
-sub set_utf8 { $UTF8= 1; binmode (STDOUT, ':utf8'); }
+sub set_utf8 { $UTF8= 1; binmode (STDIN, ':utf8'); binmode (STDOUT, ':utf8'); }
 sub usage { system ("perldoc '$0'"); exit (0); }
 
 my @PAR= ();
