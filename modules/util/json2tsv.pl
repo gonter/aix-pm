@@ -113,12 +113,52 @@ sub parse_stream
     }
     # print "data: ", Dumper ($data);
     $count++;
-    push (@$rows, $data);
 
-    foreach my $e (keys %$data) { $columns->{$e}++; }
+    my %data2;
+    flatten ($columns, '', \%data2, $data);
+    push (@$rows, \%data2);
   }
 
   $count;
+}
+
+=head2 flatten ($columns, $prefix, $row, $data)
+
+transcribe a hash structure $data into $row.  If elements of $data are hashes themselves, they are also folded into $row, where their column names are prefixed with the name of that element.
+
+Example:
+
+  { profile => "pha", key => "62538ff3b0caccafeece073070a394e0a1e9bc84", pid => "o:123456", job_data => { date => "Fri, 18 May 2018 00:01:01 +0200" } }
+
+is transcribed into
+
+  { profile => "pha", key => "62538ff3b0caccafeece073070a394e0a1e9bc84", pid => "o:123456", job_data_date => "Fri, 18 May 2018 00:01:01 +0200" }
+
+=cut
+
+sub flatten
+{
+  my $columns= shift;
+  my $prefix= shift;
+  my $row= shift;
+  my $data= shift;
+
+  foreach my $e (keys %$data)
+  {
+    my $c= $prefix . $e;
+    my $d= $data->{$e};
+
+    if (ref ($d) eq 'HASH')
+    {
+      # print "flattening $e\n";
+      flatten ($columns, $c.'_', $row, $d);
+    }
+    else
+    {
+      $columns->{$c}++;
+      $row->{$c}= $d;
+    }
+  }
 }
 
 __END__
