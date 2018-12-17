@@ -278,7 +278,7 @@ sub mon_fs
     # $ev->{'ts'}= $ts;
   }
 
-  $ev;
+  (wantarray) ? ($ev, $fs_hash) : $ev;
 }
 
 sub get_fs_level
@@ -330,26 +330,28 @@ sub check_level
 
   my ($label, $l_warn, $v_warn, $l_crit, $v_crit)= @$reference;
 
+  my $fmt_level= sprintf ("%2.1f", $level); # NOTE: avoid too fine grained percentage values in message
+
   my ($nagios_status, $nagios_msg);
   if ($level >= $v_crit)
   {
     $nagios_status= 3;
-    $nagios_msg= "resource=[$resource] $label=$level >= $l_crit=$v_crit";
+    $nagios_msg= "resource=[$resource] $label=$fmt_level >= $l_crit=$v_crit";
   }
   elsif ($level >= $v_warn)
   {
     $nagios_status= 2;
-    $nagios_msg= "resource=[$resource] $label=$level >= $l_warn=$v_warn";
+    $nagios_msg= "resource=[$resource] $label=$fmt_level >= $l_warn=$v_warn";
   }
   elsif ($level >= 0.0)
   {
     $nagios_status= 0;
-    $nagios_msg= "resource=[$resource] $label=$level";
+    $nagios_msg= "resource=[$resource] $label=$fmt_level";
   }
   else
   {
     $nagios_status= 1;
-    $nagios_msg= "resource=[$resource] $label=$level";
+    $nagios_msg= "resource=[$resource] $label=$fmt_level";
   }
 
   (wantarray) ? ($nagios_status, $nagios_msg) : [$nagios_status, $nagios_msg];
