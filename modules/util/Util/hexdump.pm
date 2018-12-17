@@ -20,35 +20,35 @@ sub hexdump
   my ($i, $c, $v);
 
   my $run= 1;
+  my $dl= length ($data);
   DATA: while ($run)
   {
     my $char= '';
     my $hex= '';
     my $offx= sprintf ('%08X', $off);
 
-    for ($i= 0; $i < 16; $i++)
+    BYTE: for ($i= 0; $i < 16; $i++)
     {
-      $c= substr ($data, $off+$i, 1);
+      $hex .= ' ' if ($i == 8);
 
-      if ($i == 8)
+      if ($off+$i < $dl)
       {
-        $hex  .= ' ';
+        $c= substr ($data, $off+$i, 1);
+
+        if (defined ($c) && $c ne '')
+        {
+          $v= unpack ('C', $c);
+          $c= '.' if ($v < 0x20 || $v >= 0x7F);
+
+          $char .= $c;
+          $hex .= sprintf (' %02X', $v);
+          next BYTE;
+        }
       }
 
-      if ($c ne '')
-      {
-        $v= unpack ('C', $c);
-        $c= '.' if ($v < 0x20 || $v >= 0x7F);
-
-        $char .= $c;
-        $hex .= sprintf (' %02X', $v);
-      }
-      else
-      {
-        $char .= ' ';
-        $hex  .= '   ';
-        $run= 0;
-      }
+      $char .= ' ';
+      $hex  .= '   ';
+      $run= 0;
     }
 
     print FX "$offx $hex  |$char|\n";

@@ -164,10 +164,12 @@ sub load_csv_file
   my $fi_open;
   (*FI, $fi_open)= $obj->open_csv_file ($fnm);
 
-  unless ($obj->{'no_headings'})
-  {
-    $obj->load_csv_file_headings (*FI);
+  $obj->load_csv_file_headings (*FI) unless ($obj->{'no_headings'});
 
+  if (@{$obj->{columns}}  # NOTE: columns might have been defined using $obj->define_columns(...)
+      && exists ($obj->{fidef})
+     )
+  {
     my ($fidef)= map { $obj->{$_} } qw(fidef);
     if (defined ($fidef))
     {

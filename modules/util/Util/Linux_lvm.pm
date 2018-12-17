@@ -28,7 +28,7 @@ my @paths= qw(/usr/sbin /sbin);
 my @caller= caller ();
 # print "caller=[",join (':', @caller),"]\n";
 # __PACKAGE__->main if (!defined (@caller) || ($caller[0] eq 'main' && $caller[1] eq '-'));
-__PACKAGE__->main if (!defined (@caller));
+__PACKAGE__->main unless (@caller);
 __PACKAGE__->test if (($caller[0] eq 'main' && $caller[1] eq '-'));
 
 sub new

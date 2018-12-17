@@ -62,6 +62,12 @@ print list of column names (CSV header)
 
   only display this many items
 
+=head2 searching
+
+  --select <field>=<value>
+  --find <pattern>
+  --in <field> <value-1> .. <value-n>
+
 =cut
 
 use strict;
@@ -91,16 +97,21 @@ my $view= 'matrix'; # values: matrix, extended, header, json, dumper
 my $all= 0; # for extend view, sofar...
 my $find_pattern= undef;   # this is used for a pattern match
 my $search_string= undef;  # this is used to select a certain value in a column
+
+# used for option --in <fieldname> <field_value>+
+my @search_strings;
+my $search_field_name=
+
 my $max_items= undef;
 
-sub set_utf8 { $UTF8= 1; binmode (STDOUT, ':utf8'); }
+sub set_utf8 { $UTF8= 1; binmode (STDIN, ':utf8'); binmode (STDOUT, ':utf8'); }
 sub usage { system ("perldoc '$0'"); exit (0); }
 
-my @PAR= ();
+my @PARS= ();
 while (defined (my $arg= shift (@ARGV)))
 {
-     if ($arg eq '--') { push (@PAR, @ARGV); @ARGV=(); }
-  elsif ($arg eq '-') { push (@PAR, $arg); }
+     if ($arg eq '--') { push (@PARS, @ARGV); @ARGV=(); }
+  elsif ($arg eq '-') { push (@PARS, $arg); }
   elsif ($arg =~ /^--(.+)/)
   {
     my ($opt, $val)= split ('=', $1, 2);
@@ -112,6 +123,11 @@ while (defined (my $arg= shift (@ARGV)))
     elsif ($opt eq 'search' || $opt eq 'select')
     { # TODO: allow multiple searches!
       $search_string= $val || shift (@ARGV);
+      # print __LINE__, " search_string=[$search_string]\n";
+    }
+    elsif ($opt eq 'in')
+    {
+      $search_field_name= $val || shift (@ARGV);
     }
     elsif ($opt eq 'max')    { $max_items=     $val || shift (@ARGV); }
     elsif ($opt eq 'hdr')    { $view= 'header'; }
@@ -159,12 +175,19 @@ while (defined (my $arg= shift (@ARGV)))
   }
   else
   {
-    push (@PAR, $arg);
+    if (defined ($search_field_name))
+    {
+      push (@search_strings, $arg);
+    }
+    else
+    {
+      push (@PARS, $arg);
+    }
   }
 
 }
 
-unless (@PAR)
+unless (@PARS)
 {
 
 =begin comment
@@ -177,7 +200,7 @@ EOX
 =end comment
 =cut
 
-  push (@PAR, '-');
+  push (@PARS, '-');
 }
 
 my $csv= new Util::Simple_CSV ('separator' => $CSV_SEP,
@@ -193,7 +216,7 @@ if (@set_columns)
   $csv->{'no_headings'}= 1;
 }
 
-# print "find_pattern=[$find_pattern] search_string=[$search_string]\n";
+# print __LINE__, " find_pattern=[$find_pattern] search_string=[$search_string]\n";
 
 if (defined ($find_pattern))
 {
@@ -244,14 +267,15 @@ print "procssing find_pattern=[$find_pattern]\n";
 
 if (defined ($search_string))
 {
-# print "procssing search_string=[$search_string]\n";
   my ($field_name, $field_value)= split ('=', $search_string, 2);
+# print __LINE__, " procssing search_string=[$search_string] field_name=[$field_name] field_value=[$field_value]\n";
 
   # the filter is dynamically generated since the field number is only
   # known after the column names are identified!
   sub fidef2
   {
     my $obj= shift;
+# print __LINE__, " in fidef2\n";
 
     my $cols= $obj->{'columns'};
     my $col= 0;
@@ -275,17 +299,51 @@ EOX
 
   $csv->set ('fidef' => \&fidef2);
 }
+elsif (@search_strings)
+{
+  # the filter is dynamically generated since the field number is only
+  # known after the column names are identified!
+
+  sub fidef3
+  {
+    my $obj= shift;
+# print __LINE__, " in fidef2\n";
+
+    my $cols= $obj->{'columns'};
+    my $col= 0;
+    my %cols= map { $_ => $col++ } @$cols;
+
+    # print "cols: ", Dumper ($cols);
+    # print "cols: ", Dumper (\%cols);
+  my %fidef3= map { $_ => 1 } @search_strings;
+  print STDERR __LINE__, " fidef3: ", main::Dumper (\%fidef3);
+
+    my $sub= <<"EOX";
+  my \$fidef= sub
+  {
+    my \$row= shift;
+    return (exists (\$fidef3{\$row->[$cols{$search_field_name}]}));
+  };
+EOX
+    print STDERR "sub: [$sub]\n"; # if ($debug_level ... );
+    my $res= eval ($sub);
+    # print "res=[$res]\n";
+    $res;
+  };
+
+  $csv->set ('fidef' => \&fidef3);
+}
 
 if (defined ($max_items))
 {
   $csv->set ( max_items => $max_items );
 }
 
-my $fnm= shift (@PAR);
+my $fnm= shift (@PARS);
 $csv->load_csv_file ($fnm);
 # print "csv: ", Dumper ($csv); exit (0);
 
-while (my $fnm= shift (@PAR))
+while (my $fnm= shift (@PARS))
 {
   $csv->merge_csv_file ($fnm);
 }
@@ -340,7 +398,7 @@ elsif ($view eq 'dumper')
 }
 elsif ($view eq 'no')
 {
-  # dont show anyhing
+  # dont show anything
 }
 else
 {
@@ -372,7 +430,7 @@ __END__
 
 =head1 Copyright
 
-Copyright (c) 2006..2013 Gerhard Gonter.  All rights reserved.  This
+Copyright (c) 2006..2018 Gerhard Gonter.  All rights reserved.  This
 is free software; you can redistribute it and/or modify it under
 the same terms as Perl itself.
 
@@ -406,5 +464,5 @@ Together with tagging, this would be a powerful feature.
 
 Also: Add a method to tag (not just filter) rows via callback...
 
-Uh... that's getting compplex!
+Uh... that's getting complex!
 

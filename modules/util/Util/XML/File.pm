@@ -8,7 +8,7 @@ use strict;
 # use XML::Simple;
 use XML::LibXML::Simple;
 
-my $DEBUG= 1;
+my $DEBUG= 0;
 
 sub fetch
 {
@@ -57,7 +57,7 @@ print __FILE__, ' ', __LINE__, " cache: mtime=$st[9] max_age=$max_age use=$use_c
   }
 
   $xml= $res->decoded_content;
-print __LINE__, " get_aleph_metadata: xml=[$xml]\n" if ($DEBUG >= 0);
+print __LINE__, " fetch: xml=[$xml]\n" if ($DEBUG > 0);
 
   if (defined ($cache_file))
   {
@@ -75,11 +75,28 @@ print __LINE__, " get_aleph_metadata: xml=[$xml]\n" if ($DEBUG >= 0);
   }
 
   $xmlref= XMLin ($xml, ForceContent => 1, ForceArray => 1, KeyAttr => [ ] );
-print __LINE__, " xmlref: ", main::Dumper ($xmlref) if ($DEBUG >= 0);
+print __LINE__, " xmlref: ", main::Dumper ($xmlref) if ($DEBUG > 0);
 
   return ($xmlref, $xml);
 }
 
+sub save
+{
+  my $fnm= shift;
+  my $xml= shift;
+
+  unless (open (XML, '>:utf8', $fnm))
+  {
+    print "ATTN: can't write to fnm=[$fnm]";
+    return undef;
+  }
+
+  print "saving xml to $fnm\n";
+  print XML $xml;
+  close (XML);
+
+  1;
+}
 
 1;
 
