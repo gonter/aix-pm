@@ -129,12 +129,14 @@ sub read_config
 
     my $n_mon=    setup_default_collection ($paf, 'monitoring');
     my $n_events= setup_default_collection ($paf, 'events');
+    my $n_msg=    setup_default_collection ($paf, 'messages');
 
     # print "paf: ", Dumper ($paf);
     # print "n_mon=[$n_mon] n_events=[$n_events]\n";
 
     my ($mdb, $c_moni)= Util::MongoDB::connect ($paf, $n_mon);
     my $c_events= $mdb->get_collection($n_events);
+    my $c_msg=    $mdb->get_collection($n_msg);
     # print "mdb: ", Dumper ($mdb);
     # print "c_moni: ", Dumper ($c_moni);
     # print "c_events: ", Dumper ($c_events);
@@ -142,7 +144,17 @@ sub read_config
     $obj->{'_mdb'}= $mdb;
     $obj->{'_moni'}= $c_moni;
     $obj->{'_events'}= $c_events;
+    $obj->{'_messages'}= $c_msg;
     # END connect to MongoDB collection
+
+  my $machine= $mon_cfg->{machine};
+  unless (defined ($machine))
+  {
+    my @uname= split (' ', `uname -a`);
+    $machine= $uname[1];
+  }
+  $obj->{_machine}= $machine;
+
   1;
 }
 
@@ -156,8 +168,12 @@ sub setup_ref
 {
   my $obj= shift;
 
+  # 2018-12-21: hmm... why is _ref not always initialized as a fresh empty hash ref?
   my $ref= $obj->{'_ref'};
   $ref= $obj->{'_ref'}= {} unless (defined ($ref));
+
+  my @ai;
+  $obj->{'_auto_increment'}= \@ai;
 
   my $fs_list= $obj->{'mon_cfg'}->{'filesystems'};
   
@@ -165,30 +181,15 @@ sub setup_ref
   {
     my $mp= $fs->{'mount_point'};
     $ref->{$mp}= $fs;
+
+    push (@ai, $fs) if (exists ($fs->{auto_increment}));
   }
 
   # print __LINE__, " ref: ", Dumper ($ref);
   $ref;
 }
 
-sub setup_default_collection
-{
-  my $cfg= shift;
-  my $name= shift;
-
-# print __LINE__, " cfg: ", Dumper ($cfg);
-  my $colls= $cfg->{'collections'};
-  $colls= $cfg->{'collections'}= {} unless (defined ($colls));
-  my $col= $colls->{$name};
-  $col= $colls->{$name}= $name unless (defined ($col));
-
-# print __LINE__, " cfg: ", Dumper ($cfg);
-# print "col=[$col]\n";
-
-  $col;
-}
-
-=head1 FILE SYSTEM FUNCTIONS
+=head1 FILE SYSTEM METHODS
 
 =cut
 
@@ -281,6 +282,77 @@ sub mon_fs
   (wantarray) ? ($ev, $fs_hash) : $ev;
 }
 
+sub get_auto_increment_filesystems
+{
+  my $mon= shift;
+  my $ai= $mon->{_auto_increment};
+  $ai= [] unless (defined ($ai));
+
+  (wantarray) ? @$ai : $ai;
+}
+
+sub get_machine
+{
+  my $mon= shift;
+
+  $mon->{_machine};
+}
+
+sub send_message
+{
+  my $mon= shift;
+  my $message= shift;
+  my $priority= shift || 'low';
+
+  my $msg_cnt= 0;
+  my $c_msg= $mon->{_messages};
+  my $notify= $mon->{mon_cfg}->{notify};
+  
+  if (defined ($c_msg) && defined ($notify))
+  {
+    my @notify= (ref ($notify) eq 'ARRAY') ? @$notify : $notify;
+    foreach my $to (@notify)
+    {
+      $c_msg->insert({ message => $message, to => $to, priority => $priority, state => 'new' });
+      $msg_cnt;
+    }
+  }
+
+  $mon->{_events}->insert({ event => 'messages', message => $message, priority => $priority, count => $msg_cnt });
+}
+
+=head1 SETUP FUNCTIONS
+
+=head2 $col= setup_default_collecton ($name)
+
+Find the collection named for a specific purpose in the configuration.
+If there is no collection name in the configuration, it uses the default
+name $name.  E.g. setup_default_collection ('events') returns 'events',
+if there is nothing configured.
+
+=cut
+
+sub setup_default_collection
+{
+  my $cfg= shift;
+  my $name= shift;
+
+# print __LINE__, " cfg: ", Dumper ($cfg);
+  my $colls= $cfg->{'collections'};
+  $colls= $cfg->{'collections'}= {} unless (defined ($colls));
+  my $col= $colls->{$name};
+  $col= $colls->{$name}= $name unless (defined ($col));
+
+# print __LINE__, " cfg: ", Dumper ($cfg);
+# print "col=[$col]\n";
+
+  $col;
+}
+
+=head1 GENERIC STATUS FUNCTIONS
+
+=cut
+
 sub get_fs_level
 {
   my $x= shift;
@@ -297,10 +369,6 @@ sub get_fs_level
 
   ($pct_used1 > $pct_used2) ? $pct_used1 : $pct_used2;
 }
-
-=head1 GENERIC STATUS FUNCTIONS
-
-=cut
 
 sub compare_levels
 {
