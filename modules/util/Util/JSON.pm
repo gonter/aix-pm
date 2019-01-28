@@ -3,6 +3,7 @@ package Util::JSON;
 
 use strict;
 
+use File::Slurper qw(read_text write_text);
 use JSON -convert_blessed_universally;
 
 sub read_json_file
@@ -12,10 +13,19 @@ sub read_json_file
   # BEGIN load JSON data from file content
   local $/;
   # print "reading config [$fnm]\n";
+
+=begin comment
+
   open( my $fh, '<:utf8', $fnm ) or return undef;
   my $json_text   = <$fh>;
   close ($fh);
   # decode_json( $json_text ); # for some reason, decode_json() barfs when otherwise cleanly read wide characters are present
+
+=end comment
+=cut
+
+  my $json_text= read_text($fnm);
+
   from_json($json_text);
 }
 
@@ -30,9 +40,17 @@ sub write_json_file
   my $json= new JSON;
   my $json_str= $json->allow_blessed->convert_blessed->encode($x);
 
+=begin comment
+
   open (J, '>:utf8', $json_fnm) or die ("can not write to [$json_fnm]");
   syswrite (J, $json_str);
   close (J);
+
+
+=end comment
+=cut
+
+  write_text($fnm, $json_str);
 
   1;
 }
@@ -51,6 +69,12 @@ sub get_config_item
 1;
 
 __END__
+
+=head1 DEPENDENCIES
+
+=head2 Ubuntu
+
+sudo apt-get install libfile-slurper-perl
 
 =head1 AUTHOR
 
