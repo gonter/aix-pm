@@ -50,7 +50,7 @@ sub write_json_file
 =end comment
 =cut
 
-  write_text($fnm, $json_str);
+  write_text($json_fnm, $json_str);
 
   1;
 }
