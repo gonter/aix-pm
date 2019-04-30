@@ -164,6 +164,8 @@ sub load_csv_file
   my $fi_open;
   (*FI, $fi_open)= $obj->open_csv_file ($fnm);
 
+  return undef unless (defined ($fi_open));
+
   $obj->load_csv_file_headings (*FI) unless ($obj->{'no_headings'});
 
   if (@{$obj->{columns}}  # NOTE: columns might have been defined using $obj->define_columns(...)
@@ -178,9 +180,11 @@ sub load_csv_file
     }
   }
 
-  $obj->load_csv_file_body (*FI) unless ($obj->{'no_body'});
+  my $row_count= $obj->load_csv_file_body (*FI) unless ($obj->{'no_body'});
 
   close (FI) if ($fi_open);
+
+  $row_count;
 }
 
 sub open_csv_file
@@ -213,7 +217,7 @@ sub open_csv_file
     }
     else
     {
-      $obj->{'ERROR'}= "cant read $fnm";
+      print STDERR "ATTN: ", ($obj->{'ERROR'}= "can't read $fnm"), "\n";
       return undef;
     }
     $fi_open= 1;
@@ -368,6 +372,93 @@ print __LINE__, " row: ", join (', ', @row), "\n" if ($DEBUG > 1);
   $obj->{'data'}= \@data unless ($no_hash);
 
   $obj->{'row_count'}= $row_count;
+
+  $row_count;
+}
+
+sub load_csv_data
+{
+  my $obj= shift;
+  my $rows= shift;
+
+  unless (defined ($rows) && ref($rows) eq 'ARRAY')
+  {
+    print STDERR "need an array reference\n";
+    return undef;
+  }
+
+  my ($no_hash, $no_array, $sep, $columns, $strip, $filter, $max_items)=
+      map { $obj->{$_} } qw(no_hash no_array separator columns strip_quotes filter max_items);
+
+  my $mk_columns= 0;
+  my @columns;
+  my %columns;
+  if (defined ($columns))
+  {
+    @columns= @$columns;
+  }
+  else
+  {
+    print STDERR "NOTE: columns undefined; creating them\n";
+    $mk_columns= 1;
+  }
+
+  # NOTE: the code in load_csv_file_body() assumes that $row is an array reference!
+  # so we need to determine the columns first
+
+  if ($mk_columns)
+  {
+    PASS1: foreach my $row (@$rows)
+    {
+      foreach my $column (keys %$row)
+      {
+        $columns{$column}++;
+      }
+    }
+
+    @columns= sort keys %columns; # yeah, we do not know any better way...
+    $obj->{columns}= \@columns;
+  }
+
+  my $idx= 0;
+  %columns= map { $_ => $idx++ } @columns;
+
+  print __LINE__, " columns list: ", join (' ', @columns), "\n";
+  print __LINE__, " columns indexes: ", join (' ', %columns), "\n";
+
+  my @rows= ();
+  my @data= ();
+  my $row_count= 0;
+
+  PASS2: foreach my $row (@$rows)
+  {
+    my (@row, %row);
+    foreach my $column (keys %$row)
+    {
+      if (exists ($columns{$column}))
+      {
+        $row[$columns{$column}]= $row->{$column};
+        $row{$column}= $row->{$column};
+      }
+    }
+    print "row: ", Dumper (\%row);
+
+    if (defined ($filter))
+    {
+      my $take_it= &$filter ($row);
+      next PASS2 unless ($take_it);
+    }
+
+    push (@rows, \@row) unless ($no_array);
+    push (@data, \%row) unless ($no_hash);
+    $row_count++;
+
+    last ROW if (defined ($max_items) && $row_count >= $max_items);
+  }
+
+  $obj->{rows}= \@rows unless ($no_array);
+  $obj->{data}= \@data unless ($no_hash);
+  $obj->{row_count}= $row_count;
 
   $row_count;
 }
@@ -711,9 +802,9 @@ sub merge
       }
       else
       {
-	push (@$c1, $c_name); # additional colum
-	my $c1_num= $#$c1;       # new column number is highest index
-	$i1->{$c_name}= $map[$c_num]= $c1_num;
+        push (@$c1, $c_name); # additional colum
+        my $c1_num= $#$c1;       # new column number is highest index
+        $i1->{$c_name}= $map[$c_num]= $c1_num;
       }
 
       $c_num++;
@@ -736,7 +827,7 @@ sub merge
       my @row= ();
       for (my $column= 0; $column <= $o2_columns; $column++)
       {
-	$row[$map[$column]]= $row->[$column];
+        $row[$map[$column]]= $row->[$column];
       }
 
       # add new row to existing csv row

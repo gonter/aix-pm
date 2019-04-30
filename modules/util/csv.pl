@@ -76,6 +76,7 @@ BEGIN { my @b= split ('/', $0); pop @b; unshift (@INC, join ('/', @b, 'perl')); 
 
 use Util::Simple_CSV;
 use Util::Matrix;
+use Util::JSON;
 use JSON;
 use Data::Dumper;
 $Data::Dumper::Indent= 1;
@@ -100,9 +101,10 @@ my $search_string= undef;  # this is used to select a certain value in a column
 
 # used for option --in <fieldname> <field_value>+
 my @search_strings;
-my $search_field_name=
+my $search_field_name;
 
-my $max_items= undef;
+my $max_items;
+my $json_file_to_load;
 
 sub set_utf8 { $UTF8= 1; binmode (STDIN, ':utf8'); binmode (STDOUT, ':utf8'); }
 sub usage { system ("perldoc '$0'"); exit (0); }
@@ -142,6 +144,7 @@ while (defined (my $arg= shift (@ARGV)))
     elsif ($opt eq 'TAB'    || $opt eq 'tab')   { $CSV_SEP= "\t"; }
     elsif ($opt eq 'UTF8'   || $opt eq 'utf8')  { set_utf8(); }
     elsif ($opt eq 'border' || $opt eq 'style') { Util::Matrix::set_border_style ($val); }
+    elsif ($opt eq 'load-json') { $json_file_to_load= $val || shift (@ARGV); }
     elsif ($opt eq 'AWK')
     { # hmm... maybe this should be done in a completely different way
       Util::Matrix::set_header_style ('none');
@@ -341,6 +344,8 @@ if (defined ($max_items))
 
 my $fnm= shift (@PARS);
 $csv->load_csv_file ($fnm);
+
+exit (0) unless defined ($csv);
 # print "csv: ", Dumper ($csv); exit (0);
 
 while (my $fnm= shift (@PARS))
@@ -348,10 +353,31 @@ while (my $fnm= shift (@PARS))
   $csv->merge_csv_file ($fnm);
 }
 
-exit (0) unless defined ($csv);
+if (defined ($json_file_to_load))
+{
+  my $data= Util::JSON::read_json_file ($json_file_to_load);
+
+  my $csv2= clone Util::Simple_CSV($csv);
+  $csv2->load_csv_data($data);
+
+  $csv2->save_csv_file ('filename' => '@json_data.tsv',
+           'separator' => ((defined ($CSV_OUT_SEP)) ? $CSV_OUT_SEP : $CSV_SEP));
+
+  if (defined ($csv->{columns}))
+  {
+    $csv->merge($csv2, $csv->{no_array}, $csv->{no_hash});
+  }
+  else
+  {
+    $csv= $csv2;
+    print STDERR "NOTE: using csv2\n";
+    print "csv2: ", Dumper ($csv2);
+    @columns= @{$csv->{columns}};
+  }
+}
 
 # print "cols=", Dumper ($csv->{'columns'}), "\n";
-@columns= @{$csv->{'columns'}} if (!@columns && exists ($csv->{'columns'}) && defined ($csv->{'columns'}));
+@columns= @{$csv->{columns}} if (!@columns && exists ($csv->{columns}) && defined ($csv->{columns}));
 
 if (@sort_columns)
 {
@@ -430,7 +456,7 @@ __END__
 
 =head1 Copyright
 
-Copyright (c) 2006..2018 Gerhard Gonter.  All rights reserved.  This
+Copyright (c) 2006..2019 Gerhard Gonter.  All rights reserved.  This
 is free software; you can redistribute it and/or modify it under
 the same terms as Perl itself.
 
@@ -465,4 +491,12 @@ Together with tagging, this would be a powerful feature.
 Also: Add a method to tag (not just filter) rows via callback...
 
 Uh... that's getting complex!
+
+=head2 --load-json
+
+This is not yet working properly.  Right now, it is called like this:
+
+  tsv --load-json nodes.json dummy.tsv 
+
+dummy.tsv should not exist; the result is a TSV file named @json_data.tsv
 
