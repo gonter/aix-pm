@@ -189,6 +189,15 @@ sub setup_ref
   $ref;
 }
 
+sub event
+{
+  my $mon= shift;
+  my $ev= shift;
+
+  my $events= $mon->{_events};
+
+  my $event_id= $events->insert($ev);
+}
 =head1 FILE SYSTEM METHODS
 
 =cut
@@ -205,7 +214,7 @@ sub mon_fs
   # $filesystems->df('h');
   # print "filesystems: ", Dumper ($filesystems);
 
-  my $worst_status= -1;
+  my $worst_status_code= -1;
   my $worst_msg= 'unknown';
 
   my $now= time ();
@@ -220,7 +229,7 @@ sub mon_fs
 
     # TODO:
     # * calculate a proper nagios status code
-    # * update $worst_status accordingly
+    # * update $worst_status_code accordingly
 
     my @cmp= ();
 
@@ -240,13 +249,13 @@ sub mon_fs
       push (@cmp, $res_i);
     }
 
-    my ($nagios_status, $nagios_msg)= compare_levels(@cmp);
-       ($worst_status, $worst_msg)=   compare_levels([$worst_status, $worst_msg], [$nagios_status, $nagios_msg]);
+    my ($nagios_status_code, $nagios_msg)= compare_levels(@cmp);
+       ($worst_status_code, $worst_msg)=   compare_levels([$worst_status_code, $worst_msg], [$nagios_status_code, $nagios_msg]);
 
     my $rc= $moni->update({ 'resource' => $x_fs->{'mp'} },
                   { 'resource' => $x_fs->{'mp'}, 'e' => $now, 'ts' => DateTime->from_epoch('epoch' => $now),
-                    'nagios_status'      => $nagios_status[$nagios_status],
-                    'nagios_status_code' => $nagios_status,
+                    'nagios_status'      => $nagios_status[$nagios_status_code],
+                    'nagios_status_code' => $nagios_status_code,
                     'nagios_msg'         => $nagios_msg,
                     'val' => $x_fs->{'k'}->{'used'},
                     'par' => $x_fs
@@ -264,7 +273,7 @@ sub mon_fs
     'e' => $now,
     # 'ts' => $ts,
     # 'ts' => $ts->iso8601(),
-    'worst_status' => $nagios_status[$worst_status],
+    'worst_status' => $nagios_status[$worst_status_code],
     'worst_msg' => $worst_msg
   };
 
@@ -350,6 +359,10 @@ sub setup_default_collection
 }
 
 =head1 GENERIC STATUS FUNCTIONS
+
+=head2 get_fs_level
+
+return filling level of a filesystem in percent
 
 =cut
 
