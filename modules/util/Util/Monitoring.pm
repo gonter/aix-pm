@@ -253,7 +253,9 @@ sub mon_fs
        ($worst_status_code, $worst_msg)=   compare_levels([$worst_status_code, $worst_msg], [$nagios_status_code, $nagios_msg]);
 
     my $rc= $moni->update({ 'resource' => $x_fs->{'mp'} },
-                  { 'resource' => $x_fs->{'mp'}, 'e' => $now, 'ts' => DateTime->from_epoch('epoch' => $now),
+                  {
+                    'resource' => $x_fs->{'mp'},
+                    'e' => $now, 'ts' => DateTime->from_epoch('epoch' => $now),
                     'nagios_status'      => $nagios_status[$nagios_status_code],
                     'nagios_status_code' => $nagios_status_code,
                     'nagios_msg'         => $nagios_msg,
@@ -265,14 +267,13 @@ sub mon_fs
     # print __LINE__, " rc=[$rc]\n";
   }
 
-  # my $ts= DateTime->from_epoch('epoch' => $now);
+  my $ts= DateTime->from_epoch('epoch' => $now);
   my $ev=
   {
     'event' => 'nagios_update',
     'agent' => 'mon_fs',
     'e' => $now,
-    # 'ts' => $ts,
-    # 'ts' => $ts->iso8601(),
+    'ts' => $ts,
     'worst_status' => $nagios_status[$worst_status_code],
     'worst_msg' => $worst_msg
   };
@@ -282,7 +283,6 @@ sub mon_fs
 
   if (1)
   {
-    # $ev->{'ts'}= $ts->iso8601();
     $ev->{'_id'}= $event_id->{'value'};
     print "reporing event: ", Dumper ($ev);
     # $ev->{'ts'}= $ts;
@@ -320,9 +320,10 @@ sub send_message
   if (defined ($c_msg) && defined ($notify))
   {
     my @notify= (ref ($notify) eq 'ARRAY') ? @$notify : $notify;
+    my $now= time();
     foreach my $to (@notify)
     {
-      $c_msg->insert({ message => $message, to => $to, priority => $priority, state => 'new' });
+      $c_msg->insert({ message => $message, to => $to, priority => $priority, state => 'new', 'e' => $now, 'ts' => DateTime->from_epoch('epoch' => $now),});
       $msg_cnt;
     }
   }
