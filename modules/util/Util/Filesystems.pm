@@ -5,7 +5,8 @@
 
 =head1 DESCRIPTION
 
-Wrapper for Linux::Proc::Filesystems and possibly other modules to obtain a full picture about an OS
+Wrapper for Linux::Proc::Filesystems and possibly other modules to obtain
+a full picture about available filesystems
 
 Wanted information
 * mount point info (Sys::Filesystem)
@@ -26,25 +27,43 @@ my $initialzed= 0;
 my $have_LPM= 0;
 
 BEGIN {
-eval {
-require Linux::Proc::Mounts;
-};
+  eval {
+    require Linux::Proc::Mounts;
+  };
 
-if ($@)
-{
-  print "consider to install Linux::Proc::Mounts\n";
-}
-else
-{
-  $have_LPM= 1;
-}
+  if ($@)
+  {
+    # print "consider to install Linux::Proc::Mounts\n";
+  }
+  else
+  {
+    $have_LPM= 1;
+  }
 }
 
 my %setable= map { $_ => 1 } qw();
 
-my %ignore_fs_type= map { $_ => 1 } qw(none rootfs tmpfs proc devpts devtmpfs usbfs sysfs binfmt_misc fusectl debugfs);
+my %ignore_fs_type= map { $_ => 1 } qw(none rootfs tmpfs proc devpts
+  devtmpfs usbfs sysfs binfmt_misc fusectl debugfs securityfs pstore
+  cgroup autofs hugetlbfs mqueue tracefs overlayfs fuse.gvfsd-fuse fuseblk
+  fuse.sshfs cifs squashfs nsfs
+);
+
 my %ignore_fs_path= map { $_ => 1 } qw(tmpfs);
 # print "ignore_fs_type: ", Dumper (\%ignore_fs_type);
+
+__PACKAGE__->main() unless caller();
+
+sub main
+{
+
+  # print join (' ', __FILE__, __LINE__, 'main: caller=['. caller(). ']'), "\n";
+
+  my $fs= new Util::Filesystems;
+  $fs->_init();
+  # print __LINE__, ' fs: ', Dumper($fs);
+  print "regular filesystems: ", join(' ', $fs->regular_filesystems()), "\n";
+}
 
 sub new
 {
@@ -86,7 +105,7 @@ sub _init
   if ($have_LPM)
   {
     $m= Linux::Proc::Mounts->read;
-    # print "m: ", main::Dumper ($m);
+    # print "m: ", Dumper ($m);
   }
 
   my %fs;    $self->{'fs'}=     \%fs;
@@ -96,85 +115,104 @@ sub _init
 
   if (defined ($m))
   {
-   FS: foreach my $mp (@$m)
-   {
-    my ($fs_spec, $fs_type)= ($mp->spec(), $mp->fstype());
-    # print "fs_spec=[$fs_spec] fs_type=[$fs_type] mp: ", main::Dumper ($mp);
+    FS: foreach my $mp (@$m)
+    {
+      my ($fs_spec, $fs_type)= ($mp->spec(), $mp->fstype());
+      # print "fs_spec=[$fs_spec] fs_type=[$fs_type] mp: ", Dumper ($mp);
 
-    if (exists($ignore_fs_type{$fs_type}))
-    {
-      # print "ignoring [$fs_type] ", Dumper ($mp);
-      next FS;
-    }
-    else
-    {
-      my ($fs_file, $opts)= ($mp->file(), $mp->opts_hash());
-      # print __LINE__, " XXX: fs_file=[$fs_file] fs_spec=[$fs_spec] fs_type=$fs_type\n";
-      my $x= $fs{$fs_file}=
-      $dev{$fs_spec}= 
+      if (exists($ignore_fs_type{$fs_type}))
       {
-        'mp'   => $fs_file,
-        'spec' => $fs_spec,
-        'type' => $fs_type,
-        'opts' => $opts,
-      };
-      $x->{'_mp'}= $mp if ($keep_mp_obj);
-      # $dev{$fs_spec}= $fs_file;
-      $c_fst{$fs_type}++;
-      $count++;
+        # print __LINE__, " ignoring [$fs_type] ", Dumper ($mp);
+        next FS;
+      }
+      else
+      {
+        my ($fs_file, $opts)= ($mp->file(), $mp->opts_hash());
+        # print __LINE__, " XXX: fs_file=[$fs_file] fs_spec=[$fs_spec] fs_type=$fs_type\n";
+        my $x= $fs{$fs_file}=
+        $dev{$fs_spec}= 
+        {
+          'mp'   => $fs_file,
+          'spec' => $fs_spec,
+          'type' => $fs_type,
+          'opts' => $opts,
+        };
+        $x->{'_mp'}= $mp if ($keep_mp_obj);
+        # $dev{$fs_spec}= $fs_file;
+        $c_fst{$fs_type}++;
+        $count++;
+      }
     }
-   }
   }
   else
   {
-   if (open (PM, '/proc/mounts'))
-   {
-    # print "reading /proc/mounts\n";
-    FS2: while (<PM>)
+    if (open (PM, '/proc/mounts'))
     {
-      chop;
-      # print ">>> [$_]\n";
-      my ($fs_spec, $fs_file, $fs_type, $fs_opts, $l1, $l2)= split (' ', $_, 6);
-
-    if (exists($ignore_fs_type{$fs_type}))
-    {
-      # print "ignoring [$fs_type] ", Dumper ($mp);
-      next FS2;
-    }
-    else
-    {
-      my @opts= split (',', $fs_opts);
-      # print "opts: [", join (';', @opts), "]\n";
-      my %opts;
-      foreach my $opt (@opts)
+      # print "reading /proc/mounts\n";
+      FS2: while (<PM>)
       {
-        # print "opt=[$opt]\n";
-        my ($an, $av)= split ('=', $opt, 2);
-        $av= 1 unless (defined ($av));
-        $opts{$an}= $av;
+        chop;
+        # print ">>> [$_]\n";
+        my ($fs_spec, $fs_file, $fs_type, $fs_opts, $l1, $l2)= split (' ', $_, 6);
+
+        if (exists($ignore_fs_type{$fs_type})
+            || $fs_type =~ m#fuse\..*\.AppImage$#      # NOTE: is this pattern defined somewhere?
+           )
+        {
+          # print __LINE__, " ignoring [$fs_type] [$_]\n";
+          next FS2;
+        }
+        elsif ($fs_file =~ m#^/var/lib/schroot/#)
+        {
+          # print __LINE__, " ignoring schroot [$_]\n";
+          next FS2;
+        }
+        else
+        {
+          # print __LINE__, " using [$fs_type] [$_]\n";
+          my @opts= split (',', $fs_opts);
+          # print "opts: [", join (';', @opts), "]\n";
+          my %opts;
+          foreach my $opt (@opts)
+          {
+            # print "opt=[$opt]\n";
+            my ($an, $av)= split ('=', $opt, 2);
+            $av= 1 unless (defined ($av));
+            $opts{$an}= $av;
+          }
+          # print "opts: ", Dumper (\%opts);
+
+          my $x= $fs{$fs_file}=
+          $dev{$fs_spec}= 
+          {
+            'mp'   => $fs_file,
+            'spec' => $fs_spec,
+            'type' => $fs_type,
+            'opts' => \%opts,
+          };
+          $c_fst{$fs_type}++;
+          $count++;
+        }
       }
-      # print "opts: ", main::Dumper (\%opts);
-
-      my $x= $fs{$fs_file}=
-      $dev{$fs_spec}= 
-      {
-        'mp'   => $fs_file,
-        'spec' => $fs_spec,
-        'type' => $fs_type,
-        'opts' => \%opts,
-      };
-      $c_fst{$fs_type}++;
-      $count++;
+      close (PM);
     }
-    }
-    close (PM);
-   }
   }
 
   $self->{'_init'}= 1;
   $self->{'_count'}= $count;
 
   $count;
+}
+
+sub regular_filesystems
+{
+  my $self= shift;
+
+  $self->_init(0) unless ($self->{_init});
+
+  my @regular_filesystems= sort keys %{$self->{fs}};
+
+  (wantarray) ? @regular_filesystems : \@regular_filesystems;
 }
 
 sub df
@@ -226,7 +264,12 @@ sub df
 
 }
 
-
 1;
+
 __END__
+
+
+=head1 OPTIONAL MODULES
+
+=head2 Linux::Proc::Mounts
 
