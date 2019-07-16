@@ -24,7 +24,16 @@ sub read_json_file
 =end comment
 =cut
 
-  my $json_text= read_text($fnm);
+  my $json_text;
+  eval
+  {
+    $json_text= read_text($fnm);
+  };
+
+  if ($@)
+  {
+    return undef;
+  }
 
   from_json($json_text);
 }
