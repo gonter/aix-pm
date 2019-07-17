@@ -83,7 +83,7 @@ __END__
 
 =head2 Ubuntu
 
-sudo apt-get install libfile-slurper-perl
+sudo apt-get install libjson-perl libjson-xs-perl libfile-slurper-perl
 
 =head1 AUTHOR
 
