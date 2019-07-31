@@ -61,7 +61,7 @@ sub new
     'name' => {},
     'parts' => [],    # list of MIME parts; these are again headers
   };
-  bless $HDR;
+  bless $HDR, $class;
 }
 
 # ----------------------------------------------------------------------
@@ -71,7 +71,7 @@ sub analyze_header
   my $class= shift;
   my $mail= shift;   # array of mail lines
 
-  my $HDR= &new ();
+  my $HDR= new ($class);
   # print "analyze_header: class=$class mail='$mail' HDR='$HDR'\n";
 
   map {$HDR->{$_}= undef} qw(sender);
@@ -138,7 +138,7 @@ sub parse_qf
 {
   my ($class, $qdir, $fnm)= @_;
 
-  my $HDR= &new ();
+  my $HDR= new ($class);
   local *FI;
   open (FI, "$qdir/$fnm") || return undef;
 
@@ -147,7 +147,7 @@ sub parse_qf
   my @recipients;
   my $lines;
   my ($header_tag, $header_line);
-  
+
   my $hdr_obj;  # last header object processed;
 
   while (<FI>)
@@ -229,13 +229,11 @@ sub get_received
   my $obj= shift;
   my $upd= shift;
 
-  my $m;
-
   return @{$obj->{'_first_received_'}} if (exists ($obj->{'_first_received_'}));
 
   my @res= qw(? ? ? ? ? ?);
 
-  foreach $m (@{$obj->{seq}})
+  foreach my $m (@{$obj->{seq}})
   {
     if ($m->{'tag'} eq 'received')
     {
@@ -255,18 +253,18 @@ if ($rec =~ /from (\S+)\s+\(HELO ([^)]*)\)\s*\(\[([\d\.]+)\]\) \(envelope-sender
         my ($c2b, $rdns, $ip, $h)= ($1, $2, $3, $4);
 
         if ($h =~ /\.wu-wien\.ac\.at$/)
-	{
+        {
           my ($gate, $trid);
           if ($rec =~ /by\s+(\S+)\s+.*with E?SMTP id (\w+)/)
-	  {
-	    ($gate, $trid)= ($1, $2);
-	  }
+          {
+            ($gate, $trid)= ($1, $2);
+          }
           $obj->{'_SMTP_AUTH_'}= $h;
 
 print __LINE__, " SMTP AUTH via $gate\n";
           @res= ($ip, $rdns, $c2b, $gate, $trid);
           last;
-	}
+        }
       }
 
       if ($rec =~ /from (\S+)\s+\((.*)\s*\[([\d\.]+)\]\) by ([\w\d\.\-]+)/
@@ -289,16 +287,15 @@ print __LINE__, " SMTP AUTH via $gate\n";
 
         my ($gate, $trid);
         if ($rec =~ /by\s+(\S+)\s+.*with E?SMTP id (\w+)/)
-	{
-	  ($gate, $trid)= ($1, $2);
-	}
+        {
+          ($gate, $trid)= ($1, $2);
+        }
 
-       
         my $date= '?';
         if ($rec =~ /((Mon|Tue|Wed|Thu|Fri|Sat|Sun),[^\)]+\))/)
-	{
+        {
           $date= $1;
-	}
+        }
 # print ">>> rec='$rec'\n>>>> date='$date'\n";
 
         @res= ($ip, $rdns, $c2b, $gate, $trid, $date);
@@ -463,7 +460,7 @@ print ">>> app_type='$app_type' ext='$ext'\n";
     $type=~ tr/A-Z/a-z/;
     return ($m1, $type);
   }
-  
+
   return ('mime-unknown', $ctty);
 }
 
@@ -471,7 +468,7 @@ print ">>> app_type='$app_type' ext='$ext'\n";
 sub mime_test
 {
   my $obj= shift;
-  
+
   my $m= $obj->{name}->{'X-WU-MIME'};
   print ">>>>> HDR.pm(L266): m=$m\n";
   if ($m)
