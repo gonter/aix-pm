@@ -204,12 +204,16 @@ sub save_as_csv
   my $eol= shift || "\n";
   my $utf8= shift || 0;
 
-  unless (open (FO, '>' . $fnm))
+  unless (open (FO, '>', $fnm))
   {
     print "ATTN: cant save as csv [$fnm]\n";
     return undef;
   }
-  binmode (FO, ':utf8') if ($utf8);
+  if ($utf8)
+  {
+    print "ATTN: binmode :utf8 [$fnm]\n";
+    binmode (FO, ':utf8');
+  }
 
   print FO join ($csv_sep, @$column_names), $eol;
   my $lines= 0;
@@ -238,7 +242,7 @@ sub save_hash_as_csv
   my $eol= shift || "\n";
   my $utf8= shift || 0;
 
-  unless (open (FO, '>' . $fnm))
+  unless (open (FO, '>', $fnm))
   {
     print "ATTN: cant save as csv [$fnm]\n";
     return undef;

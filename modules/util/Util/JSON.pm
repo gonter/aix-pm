@@ -51,10 +51,9 @@ sub write_json_file
 
 =begin comment
 
-  open (J, '>:utf8', $json_fnm) or die ("can not write to [$json_fnm]");
+  open (J, '>:utf8', $json_fnm) or die ("can not write to [$json_fnm]; caller:", join (' ', caller()));
   syswrite (J, $json_str);
   close (J);
-
 
 =end comment
 =cut
