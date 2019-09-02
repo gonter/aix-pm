@@ -55,6 +55,15 @@ sub write_json_file
   my $json= new JSON;
   my $json_str= $json->allow_blessed->convert_blessed->encode($x);
 
+=begin comment
+
+  open (J, '>:utf8', $json_fnm) or die ("can not write to [$json_fnm]; caller:", join (' ', caller()));
+  syswrite (J, $json_str);
+  close (J);
+
+=end comment
+=cut
+
   write_text($json_fnm, $json_str);
 
   1;
