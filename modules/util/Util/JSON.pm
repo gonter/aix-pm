@@ -3,7 +3,22 @@ package Util::JSON;
 
 use strict;
 
-use File::Slurper qw(read_text write_text);
+BEGIN {
+  eval {
+    require File::Slurper;
+
+    # *read_text=  File::Slurper::read_text;
+    # *write_text= File::Slurper::write_text;
+  };
+
+  if ($@)
+  {
+    print STDERR "defining read_text ourselves\n";
+    *read_text=  *x_read_text;
+    *write_text= *x_wirte_text;
+  }
+}
+
 use JSON -convert_blessed_universally;
 
 sub read_json_file
@@ -11,18 +26,9 @@ sub read_json_file
   my $fnm= shift;
 
   # BEGIN load JSON data from file content
-  local $/;
   # print "reading config [$fnm]\n";
 
-=begin comment
-
-  open( my $fh, '<:utf8', $fnm ) or return undef;
-  my $json_text   = <$fh>;
-  close ($fh);
   # decode_json( $json_text ); # for some reason, decode_json() barfs when otherwise cleanly read wide characters are present
-
-=end comment
-=cut
 
   my $json_text;
   eval
@@ -30,7 +36,7 @@ sub read_json_file
     $json_text= read_text($fnm);
   };
 
-  if ($@)
+  if ($@ || !defined ($json_text))
   {
     return undef;
   }
@@ -49,16 +55,6 @@ sub write_json_file
   my $json= new JSON;
   my $json_str= $json->allow_blessed->convert_blessed->encode($x);
 
-=begin comment
-
-  open (J, '>:utf8', $json_fnm) or die ("can not write to [$json_fnm]");
-  syswrite (J, $json_str);
-  close (J);
-
-
-=end comment
-=cut
-
   write_text($json_fnm, $json_str);
 
   1;
@@ -74,6 +70,29 @@ sub get_config_item
 {
   my $cfg= shift;
 }
+
+sub x_read_text
+{
+  my $fnm= shift;
+
+  open( my $fh, '<:utf8', $fnm ) or return undef;
+  local $/;
+  my $json_text   = <$fh>;
+  close ($fh);
+
+  $json_text;
+}
+
+sub x_write_text
+{
+  my $json_fnm= shift;
+  my $json_str= shift;
+
+  open (J, '>:utf8', $json_fnm) or die ("can not write to [$json_fnm]");
+  syswrite (J, $json_str);
+  close (J);
+}
+
 
 1;
 
