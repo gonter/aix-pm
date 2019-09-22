@@ -7,15 +7,15 @@ BEGIN {
   eval {
     require File::Slurper;
 
-    # *read_text=  File::Slurper::read_text;
-    # *write_text= File::Slurper::write_text;
+    *read_text=  *File::Slurper::read_text;
+    *write_text= *File::Slurper::write_text;
   };
 
   if ($@)
   {
     print STDERR "defining read_text ourselves\n";
     *read_text=  *x_read_text;
-    *write_text= *x_wirte_text;
+    *write_text= *x_write_text;
   }
 }
 
