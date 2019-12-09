@@ -41,6 +41,14 @@ sub ts_ISO2_gmt
            $ts[5]+1900, $ts[4]+1, $ts[3], $ts[2], $ts[1], $ts[0]);
 }
 
+sub ts_ISO_gmt
+{
+  my $time= shift || time ();
+  my @ts= gmtime ($time);
+  sprintf ("%04d-%02d-%02dT%02d%02d%02d",
+           $ts[5]+1900, $ts[4]+1, $ts[3], $ts[2], $ts[1], $ts[0]);
+}
+
 sub ts_pg
 {
   my $time= shift || time ();
