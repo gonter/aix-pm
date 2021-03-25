@@ -120,8 +120,8 @@ sub read_config
   my $mon_cfg= Util::JSON::read_json_file($cfg_fnm);
   # print "mon_cfg: ", Dumper ($mon_cfg);
 
-  $obj->{'mon_cfg'}= $mon_cfg;
-  $obj->{'cfg_fnm'}= $cfg_fnm;
+  $obj->{mon_cfg}= $mon_cfg;
+  $obj->{cfg_fnm}= $cfg_fnm;
   # TODO: add mtime for update to work...
 
     # BEGIN connect to MongoDB collection
@@ -158,7 +158,16 @@ sub read_config
   1;
 }
 
-=head setup_ref
+sub get_config
+{
+  my $obj= shift;
+  my $what= shift;
+
+  my $res= $obj->{mon_cfg}->{$what};
+  $res;
+}
+
+=head2 setup_ref
 
 BEGIN access special settings
 
@@ -176,7 +185,7 @@ sub setup_ref
   $obj->{'_auto_increment'}= \@ai;
 
   my $fs_list= $obj->{'mon_cfg'}->{'filesystems'};
-  
+
   foreach my $fs (@$fs_list)
   {
     my $mp= $fs->{'mount_point'};
@@ -189,6 +198,14 @@ sub setup_ref
   $ref;
 }
 
+=head1 PAF methods
+
+=head2 $mon->event({...})
+
+register an event
+
+=cut
+
 sub event
 {
   my $mon= shift;
@@ -198,6 +215,37 @@ sub event
 
   my $event_id= $events->insert($ev);
 }
+
+=head2 $mon->message({...})
+
+send a message
+
+=cut
+
+sub send_message
+{
+  my $mon= shift;
+  my $message= shift;
+  my $priority= shift || 'low';
+
+  my $msg_cnt= 0;
+  my $c_msg= $mon->{_messages};
+  my $notify= $mon->{mon_cfg}->{notify};
+
+  if (defined ($c_msg) && defined ($notify))
+  {
+    my @notify= (ref ($notify) eq 'ARRAY') ? @$notify : $notify;
+    my $now= time();
+    foreach my $to (@notify)
+    {
+      $c_msg->insert({ message => $message, to => $to, priority => $priority, state => 'new', 'e' => $now, 'ts' => DateTime->from_epoch('epoch' => $now),});
+      $msg_cnt;
+    }
+  }
+
+  $mon->{_events}->insert({ event => 'messages', message => $message, priority => $priority, count => $msg_cnt });
+}
+
 =head1 FILE SYSTEM METHODS
 
 =cut
@@ -305,30 +353,6 @@ sub get_machine
   my $mon= shift;
 
   $mon->{_machine};
-}
-
-sub send_message
-{
-  my $mon= shift;
-  my $message= shift;
-  my $priority= shift || 'low';
-
-  my $msg_cnt= 0;
-  my $c_msg= $mon->{_messages};
-  my $notify= $mon->{mon_cfg}->{notify};
-  
-  if (defined ($c_msg) && defined ($notify))
-  {
-    my @notify= (ref ($notify) eq 'ARRAY') ? @$notify : $notify;
-    my $now= time();
-    foreach my $to (@notify)
-    {
-      $c_msg->insert({ message => $message, to => $to, priority => $priority, state => 'new', 'e' => $now, 'ts' => DateTime->from_epoch('epoch' => $now),});
-      $msg_cnt;
-    }
-  }
-
-  $mon->{_events}->insert({ event => 'messages', message => $message, priority => $priority, count => $msg_cnt });
 }
 
 =head1 SETUP FUNCTIONS
