@@ -158,6 +158,24 @@ sub read_config
   1;
 }
 
+sub get_collection
+{
+  my $self= shift;
+  my $name= shift;
+
+  my $col_handle= '_'. $name;
+  return $self->{$col_handle} if (exists($self->{$col_handle}));
+
+  my $mon_cfg= $self->{mon_cfg};
+  my $paf= $mon_cfg->{'AgentDB'};
+  my $col_name= setup_default_collection ($paf, $name);
+
+  my $mdb= $self->{_mdb};
+  my $col= $mdb->get_collection($col_name);
+  $self->{$col_handle}= $col;
+  $col;
+}
+
 sub get_config
 {
   my $obj= shift;
