@@ -8,7 +8,7 @@ Deal with Unix processes
 
 =cut
 
-package Util::processes;
+package Util::Processes;
 
 sub psauxww
 {
