@@ -21,6 +21,8 @@ sub main
 
   my @dirs= ();
   my $target;
+  my $pkg_list;
+  my %par= ( op_mode => 'link' );
   while (my $arg= shift (@ARGV))
   {
     # print __LINE__, " arg=[$arg]\n";
@@ -30,6 +32,10 @@ sub main
     {
       my ($opt, $val)= split ('=', $1, 2);
       if ($opt eq 'help') { usage(); }
+      elsif ($opt eq 'copy') { $par{op_mode}= 'copy'; }
+      elsif ($opt eq 'force' || $opt eq 'overwrite') { $par{force}= 1; }
+      elsif ($opt eq 'link') { $par{op_mode}= 'link'; }
+      elsif ($opt eq 'packages') { $pkg_list= shift(@ARGV); }
       elsif ($opt eq 'target') { $target= shift(@ARGV); }
       else { usage(); }
     }
@@ -50,7 +56,8 @@ sub main
 
   push (@dirs, '.') unless (@dirs);
 
-  my $pmlnk= pmlnk->new();
+  $par{pkg_list}= read_items($pkg_list) if (defined ($pkg_list));
+  my $pmlnk= pmlnk->new( %par );
 
   # print __LINE__, " dirs: ", join(' ', @dirs), "\n";
   foreach my $dir (@dirs)
@@ -63,7 +70,7 @@ sub main
 
   if (defined ($target))
   {
-    $pmlnk->make_links($target)
+    $pmlnk->make_links_or_copies($target)
   }
   else
   {
@@ -79,18 +86,21 @@ sub usage
 sub new
 {
   my $class= shift;
+
   my $self=
   {
+    @_,
     files => [],
     modules => [],
   };
   bless $self, $class;
+  # print __LINE__, " self: ", Dumper($self); exit;
 }
 
 sub find_modules
 {
   my $self= shift;
-  my $path= shift || '.';
+  my $path= shift;
   my $extension= shift || 'pm';
 
   my @dirs= ($path);
@@ -98,6 +108,15 @@ sub find_modules
   my @new_files= ();
   DIR: while (my $dir= shift (@dirs))
   {
+    unless ($dir =~ m#^/#)
+    {
+      $dir= undef if ($dir eq '.');
+      while ($dir=~ s#^\.\/##) {}
+      die "don't do that [$dir]" if ($dir eq '..' || $dir =~ m#^\.\.\/#);
+      my $pwd= `pwd`;
+      chop($pwd);
+      $dir= (defined ($dir) && $dir ne '') ? join('/', $pwd, $dir) : $pwd;
+    }
     opendir(DIR, $dir) or die;
     # print __LINE__, " reading dir [$dir]\n";
 
@@ -188,12 +207,41 @@ sub check_module
   $info;
 }
 
-sub make_links # or maybe copy the file?
+sub make_links_or_copies
 {
   my $self= shift;
   my $target= shift;
 
-  mk_dir($target);
+  # create target path
+  {
+    my @target= split('/', $target);
+    my @new_target;
+    foreach my $t (@target)
+    {
+      next if ($t eq '.');
+      if ($t eq '..')
+      { # TODO: maybe we should care for an empty directory in the target
+        pop(@new_target);
+        next;
+      }
+      push(@new_target, $t);
+      mk_dir(join('/', @new_target));
+    }
+    $target= join('/', @new_target);
+  }
+
+  my $op_mode= ($self->{op_mode} eq 'copy') ? 1 : 0;
+  my $force= (exists($self->{force}) && $self->{force}) ? 1 : 0;
+
+  my $check_package_list= 0;
+  my %pkg_list;
+  if (exists ($self->{pkg_list}))
+  {
+    my @pkg_list= @{$self->{pkg_list}};
+    die " empty package list!" unless (@pkg_list);
+    %pkg_list= map { $_ => 1 } @pkg_list;
+    $check_package_list= 1;
+  }
 
   my $modules= $self->{modules};
   MODULE: foreach my $module (@$modules)
@@ -207,6 +255,8 @@ sub make_links # or maybe copy the file?
       next MODULE;
     }
 
+    next if ($check_package_list && !$pkg_list{$pkg_name});
+
     my @pkg_name= split('::', $pkg_name);
     my $module_name= pop(@pkg_name);
     my $t_path= $target;
@@ -217,43 +267,133 @@ sub make_links # or maybe copy the file?
       mk_dir($t_path);
     }
     $t_path .= '/'. $module_name . '.pm';
-    mk_link($module->{filename}, $t_path);
+
+    if ($op_mode)
+    {
+      mk_copy($module->{filename}, $t_path, $force);
+    }
+    else
+    {
+      mk_link($module->{filename}, $t_path, $force);
+    }
   }
 }
 
 =head1 Internal Functions
 
-=head2 mkdir($path)
+=head2 mk_dir($path)
 
 =cut
 
 sub mk_dir
 {
   my $path= shift;
-  unless (-d $path)
+  if ($path && !-d $path)
   {
-    print "creating $path\n";
+    print "creating [$path]\n";
     mkdir($path);
   }
 }
 
 sub mk_link
 {
-  my $old= shift;
-  my $new= shift;
+  my $src= shift;
+  my $dst= shift;
+  my $force= shift;
 
-  if (-l $new)
+  if (-l $dst)
   {
-    # print "symlink [$new] already exists, ignoring\n";
+    my $lnk= readlink($dst);
+    if ($src eq $lnk) { } # ignore, that's the same thing
+    else
+    {
+      print "different symlink already exists\n";
+      print "dst=[$dst]\n";
+      print "src=[$src]\n";
+      print "lnk=[$lnk]\n";
+      if ($force)
+      {
+        unlink($dst);
+        goto LINK;
+      }
+    }
   }
-  elsif (-f $new)
+  elsif (-f $dst)
   {
-    print "ATTN: symlink [$new] already exists as file!\n";
+    print "ATTN: symlink [$dst] already exists as file!\n";
+    if ($force)
+    {
+      unlink($dst);
+      goto LINK;
+    }
   }
   else
   {
-    print "symlinking $new -> $old\n";
-    symlink($old, $new);
+LINK:
+    print "symlinking $dst -> $src\n";
+    symlink($src, $dst);
   }
 }
 
+sub mk_copy
+{
+  my $src= shift;
+  my $dst= shift;
+  my $force= shift;
+
+  if (-l $dst)
+  {
+    my $lnk= readlink($dst);
+    print "ATTN: exists as symlink:\n";
+    print "lnk=[$lnk]\n";
+    if ($force)
+    {
+      unlink ($dst);
+      goto COPY;
+    }
+  }
+  elsif (-f $dst)
+  {
+    print "ATTN: file [$dst] already exists!\n";
+    goto COPY if ($force);
+  }
+  else
+  {
+COPY:
+    print "copying $src to $dst\n";
+    copy_file($src, $dst);
+  }
+}
+
+sub copy_file
+{
+  my $src= shift;
+  my $dst= shift;
+
+  open (FI, '<:raw', $src) or die "can't read source [$src]";
+  open (FO, '>:raw', $dst) or die "can't write to destination [$dst]";
+  my $buffer;
+  while (1)
+  {
+    my $cnt= sysread(FI, $buffer, 64*1024);
+    last unless ($cnt > 0);
+    syswrite(FO, $buffer);
+  }
+  close(FO);
+  close(FI);
+}
+
+sub read_items
+{
+  my $fnm= shift;
+  open (FI, '<:utf8', $fnm) or die "can't read item list [$fnm]";
+  my @list;
+  while (<FI>)
+  {
+    chop;
+    next if (m/^#/ || m/^\s*$/);
+    push (@list, $_);
+  }
+  close(FI);
+  \@list;
+}
