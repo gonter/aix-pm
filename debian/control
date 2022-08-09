@@ -1,0 +1,14 @@
+Package: libgg-aix-pm-perl
+Version: 0.1-1
+Architecture: all
+Maintainer: Gerhard Gonter <ggonter@gmail.com>
+Original-Maintainer: Gerhard Gonter <ggonter@gmail.com>
+Installed-Size: 629
+Depends: perl
+Section: perl
+Priority: optional
+Homepage: http://aix-pm.sourceforge.net/
+Description: Perl modules from the aix-pm collection
+ The AIX:: name space plus more. Perl modules that deal with AIX specific
+ issues. A slowly evolving EMC CLARiiON monitoring tool belongs to the
+ "plus more" part.
