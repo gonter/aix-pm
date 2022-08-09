@@ -108,7 +108,7 @@ sub parse_stream
     eval { $data= from_json($l); };
     if ($@)
     {
-      # print "error: ", $@, "\n";
+      print "error: ", $@, "\n";
       next LINE;
     }
     # print "data: ", Dumper ($data);
