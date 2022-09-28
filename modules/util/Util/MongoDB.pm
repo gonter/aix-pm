@@ -7,6 +7,8 @@ use strict;
 use MongoDB;
 use Data::Dumper;
 
+my $patched;
+
 sub new
 {
   my $class= shift;
@@ -40,7 +42,7 @@ sub attach
 {
   my $self= shift;
   my $col_name= shift;
-  
+
   my $mdb= $self->{_mdb};
 
   my $col;
@@ -237,7 +239,7 @@ sub extract
   my @data= ();
   my %has_columns= ();
   while (my $row= $cursor->next())
-  { 
+  {
     # print "row: ", Dumper ($row);
     my %new_row;
     foreach my $f (keys %$row)
@@ -345,6 +347,64 @@ sub merge_arrays
 
   $upd;
 }
+
+sub patch
+{
+  return $patched if (defined ($patched));
+
+  if (defined (&MongoDB::Collection::insert_one))
+  {
+    print STDERR "MongoDB::Collection::insert undefined, patching...\n";
+    *MongoDB::Collection::insert= *MongoDB::Collection::insert_one;
+    *MongoDB::Collection::delete= *MongoDB::Collection::delete_one;
+    *MongoDB::Collection::update= *patched_update;
+    $patched= 1;
+  }
+  else
+  {
+    $patched= 0;
+  }
+
+  $patched;
+}
+
+sub patched_update
+{
+  my ($col, $filter, $upd, $opt)= @_;
+
+  # check, if there only update operators otherwise we get this nasty error:
+  # "MongoDB::DocumentError: update document must only contain update operators"
+  # see https://www.mongodb.com/docs/manual/reference/operator/update/
+  my $is_update= 1;
+  foreach my $op (keys %$upd)
+  {
+    $is_update= 0 unless ($op =~ m#^\$#);
+  }
+
+  # check, if multi is set
+  my $is_multi= (exists ($opt->{multi}) && $opt->{multi}) ? 1 : 0;
+
+  my $res;
+  if ($is_update)
+  {
+    if ($is_multi)
+    {
+      $res= MongoDB::Collection::update_many($col, $filter, $upd, $opt);
+    }
+    else
+    {
+      $res= MongoDB::Collection::update_one($col, $filter, $upd, $opt);
+    }
+  }
+  else
+  {
+    $res= MongoDB::Collection::replace_one($col, $filter, $upd, $opt);
+  }
+
+  $res;
+}
+
+patch();
 
 1;
 
