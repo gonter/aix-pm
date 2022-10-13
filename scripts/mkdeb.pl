@@ -7,14 +7,22 @@ $Data::Dumper::Indent= 1;
 
 my $pkg_base= $ENV{PKGBASE} || '~/tmp/pkg';
 
+my @packages= ();
+my $pkg_arch= 'all';
+
 while (my $arg= shift (@ARGV))
 {
-  mk_package_by_path($arg);
+  if ($arg eq '--arch') { my $pkg_arch= shift(@ARGV); }
+  else
+  {
+    mk_package_by_path($arg, $pkg_arch);
+  }
 }
 
 sub mk_package_by_path
 {
   my $arg= shift;
+  my $pkg_arch= shift;
 
   my @parts= split('/', $arg);
   my $pkg_version= pop(@parts);
@@ -22,7 +30,7 @@ sub mk_package_by_path
   my $pkg_name= pop(@parts);
   my $base= join('/', @parts);
 
-  mk_package($base, $pkg_name, $pkg_epoch, $pkg_version);
+  mk_package($base, $pkg_name, $pkg_epoch, $pkg_version, $pkg_arch);
 }
 
 sub cmd
@@ -47,7 +55,7 @@ sub mk_package
   chdir($pkg_version) or die "pkg_version not found [$pkg_version]";
 
   my $ctrl= Debian::Package::Control->read_control_file ('control/control');
-  print __LINE__, " ctrl: ", Dumper($ctrl);
+  # print __LINE__, " ctrl: ", Dumper($ctrl);
   unless (defined ($pkg_arch))
   {
     $pkg_arch= $ctrl->{fields}->{Architecture}->{value} || 'all';
@@ -67,7 +75,7 @@ sub mk_package
   cmd('(cd control && tar -cf ../control.tar .)');
   cmd('(cd data && tar -cf ../data.tar .)');
 
-  cmd(qw(xz -zv control.tar data.tar));
+  cmd(qw(xz -z control.tar data.tar));
 
   # the ar file must contain these fils in this order and should be wiped before
   unlink($deb);
