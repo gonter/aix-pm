@@ -21,3 +21,7 @@ h2. Dependencies
 h3. Ubuntu
 
 libjson-perl libjson-xs-perl
+
+h2. Todo
+
+* add Net::fanout module
