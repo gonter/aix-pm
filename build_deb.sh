@@ -2,7 +2,7 @@
 
 echo 'increment the version number, when necessary!'
 epoch=0
-version=0.1-2
+version=`awk '/Version:/ {print $2}' debian/control`
 pkgdir=tmp/stage/libgg-aix-pm-perl/$epoch/$version
 
 scripts/pmlnk.pm --copy --target $pkgdir/data/usr/share/perl5 .
