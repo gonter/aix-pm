@@ -2,9 +2,10 @@
 
 epoch=0
 version=`awk '/Version:/ {print $2}' scripts/debian/control`
-pkgdir=tmp/stage/gg-aix-pm-tools/$epoch/$version
-bindir=$pkgdir/data/usr/bin
+pkgname=`awk '/Package:/ {print $2}' debian/control`
+pkgdir=tmp/stage/$pkgname/$epoch/$version
 
+bindir=$pkgdir/data/usr/bin
 mkdir -p $pkgdir/control
 
 cp scripts/debian/control $pkgdir/control
