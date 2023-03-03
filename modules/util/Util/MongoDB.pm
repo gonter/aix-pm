@@ -354,9 +354,10 @@ sub patch
 
   if (defined (&MongoDB::Collection::insert_one))
   {
-    print STDERR "MongoDB::Collection::insert undefined, patching...\n";
+    # print STDERR "MongoDB::Collection::insert undefined, patching...\n";
     *MongoDB::Collection::insert= *MongoDB::Collection::insert_one;
     *MongoDB::Collection::delete= *MongoDB::Collection::delete_one;
+    *MongoDB::Collection::remove= *patched_remove;
     *MongoDB::Collection::update= *patched_update;
     $patched= 1;
   }
@@ -366,6 +367,30 @@ sub patch
   }
 
   $patched;
+}
+
+sub patched_remove
+{
+  my ($col, $filter, $opt)= @_;
+  $filter= {} unless (defined ($filter));
+  # print __LINE__, " patched_remove: filter: ", Dumper($filter);
+  # print __LINE__, " patched_remove: opt: ", Dumper($opt);
+  # print __LINE__, " patched_remove: caller: ", join(' ', caller()), "\n";
+
+  my $just_one= (defined($opt) && exists ($opt->{just_one}) && $opt->{just_one}) ? 1 : 0;
+  # delete($opt->{just_one});
+
+  my $res;
+  if ($just_one)
+  {
+    $res= MongoDB::Collection::delete_one($col, $filter, $opt);
+  }
+  else
+  {
+    $res= MongoDB::Collection::delete_many($col, $filter, $opt);
+  }
+
+  $res;
 }
 
 sub patched_update
