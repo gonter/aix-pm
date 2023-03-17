@@ -15,7 +15,7 @@ sub add_path
   my $data= shift;
   my $split_char= shift || '/';
 
-  print __LINE__, " add_path: path=[$path]\n";
+  # print __LINE__, " add_path: path=[$path]\n";
   push (@{$self->{paths}} => $path);
 
   my @path= split($split_char, $path);
@@ -23,7 +23,7 @@ sub add_path
 
   my ($fc, $idx, $depth)= $self->find_xx(\@path, 1);
   $fc->[$idx]->[2]= $data;
-  print __LINE__,  " add_path: path=[$path] idx=[$idx] depth=[$depth] fc: ", Dumper($fc);
+  # print __LINE__,  " add_path: path=[$path] idx=[$idx] depth=[$depth] fc: ", Dumper($fc);
   ($fc, $idx, $depth);
 }
 
@@ -46,7 +46,7 @@ sub find_path
   # print __LINE__, " path: ", Dumper(\@path);
 
   my ($fc, $idx, $depth)= $self->find_xx(\@path);
-  print __LINE__,  " add_path: path=[$path] idx=[$idx] depth=[$depth] fc: ", Dumper($fc);
+  # print __LINE__,  " find_path: path=[$path] idx=[$idx] depth=[$depth] fc: ", Dumper($fc);
   ($fc, $idx, $depth);
 }
 
@@ -64,15 +64,15 @@ sub find_xx
   PE: foreach my $pe (@$path)
   {
     $last_cursor= $cursor;
-    print __LINE__, " add_path: pe=[$pe] cursor: ", Dumper($cursor);
-    print __LINE__, " self: ", Dumper($self);
+    # print __LINE__, " add_path: pe=[$pe] cursor: ", Dumper($cursor);
+    # print __LINE__, " self: ", Dumper($self);
     my $c= @$cursor;
-    print __LINE__, " c=[$c]\n";
+    # print __LINE__, " c=[$c]\n";
     foreach (my $i= 0; $i < $c; $i++)
     {
       $last_index= $i;
       my $ce= $cursor->[$i]->[0];
-      print __LINE__, " i=[$i] ce=[$ce] pe=[$pe]\n";
+      # print __LINE__, " i=[$i] ce=[$ce] pe=[$pe]\n";
       if ($ce eq $pe)
       {
         $cursor= $cursor->[$i]->[1];
@@ -89,7 +89,7 @@ sub find_xx
     push (@$cursor, $sub_pe);
     $cursor= $sub_pe->[1];
     $depth++;
-    print __LINE__, " self: ", Dumper($self);
+    # print __LINE__, " self: ", Dumper($self);
   }
 
   ($last_cursor, $last_index, $depth);
