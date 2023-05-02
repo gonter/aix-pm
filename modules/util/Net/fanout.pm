@@ -1,5 +1,19 @@
 #!/usr/bin/perl
 
+=head1 NAME
+
+  Net::fanout
+
+=head1 DESCRIPTION
+
+Connect to a fanout pub/sub server to receive and send messages
+
+=head1 SYNPSIS
+
+  my $fanout= Net::fanout->new( { PeerHost => 'ppt.example.org' });
+
+=cut
+
 use strict;
 
 package Net::fanout;
@@ -191,4 +205,11 @@ sub send
 }
 
 1;
+
+__END__
+
+=head1 TODO
+
+* add main() so that the module can be called in standalone mode to provide a simple fanout client.
+
 
