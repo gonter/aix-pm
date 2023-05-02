@@ -10,7 +10,7 @@ Connect to a fanout pub/sub server to receive and send messages
 
 =head1 SYNOPSIS
 
-  my $fanout= Net::fanout->new( { PeerHost => 'ppt.example.org' });
+  my $fanout= Net::fanout->new( { PeerHost => 'ppt.example.org' } );
   $fanout->subscribe('mychannel');
   $fanout->announce('mychannel', 'test message');
 
@@ -21,6 +21,7 @@ use strict;
 package Net::fanout;
 
 use IO::Socket::INET;
+use IO::Select;
 use FileHandle;
 
 my @config_pars= qw(PeerHost PeerAddr PeerPort Blocking Proto);
@@ -29,6 +30,8 @@ my $MAX_RETRIES= 100;
 # debugging
 my $show_dots= 0;
 my $dots= 0;
+
+__PACKAGE__->main() unless caller();
 
 sub new
 {
@@ -206,12 +209,61 @@ sub send
   $retries;
 }
 
+sub main
+{
+  my $PeerHost= undef;
+  my $PeerPort= 1986;
+
+  my @channels= ();
+  while (my $arg= shift(@ARGV))
+  {
+    if ($arg =~ /^--(.+)/)
+    {
+      my ($opt, $val)= split('=', $1, 2);
+         if ($opt eq 'PeerHost') { $PeerHost= $val || shift(@ARGV); }
+      elsif ($opt eq 'PeerPort') { $PeerPort= $val || shift(@ARGV); }
+      # TODO: else report problem
+    }
+    else
+    {
+      push (@channels, $arg);
+    }
+  }
+
+  die "need --PeerHost=hostname" unless (defined ($PeerHost));
+
+  my $fanout= Net::fanout->new( { PeerHost => $PeerHost, PeerPort => $PeerPort } );
+  foreach my $channel (@channels)
+  {
+    $fanout->subscribe($channel);
+  }
+
+  my $stdin= IO::Select->new();
+  $stdin->add(\*STDIN);
+
+  while (1)
+  {
+    my ($channel, $msg)= $fanout->receive();
+    if (defined ($channel))
+    {
+      print join(' ', scalar localtime(time()), $channel, $msg), "\n";
+    }
+
+    if ($stdin->can_read(0.5))
+    {
+      my $l= <STDIN>; chop($l);
+      my ($cmd, $channel, $msg)= split(' ', $l, 3);
+      if ($cmd eq 'announce')
+      {
+        $fanout->announce($channel, $msg);
+      }
+    }
+  }
+
+}
+
 1;
 
 __END__
-
-=head1 TODO
-
-* add main() so that the module can be called in standalone mode to provide a simple fanout client.
 
 
