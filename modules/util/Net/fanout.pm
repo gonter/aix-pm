@@ -8,9 +8,11 @@
 
 Connect to a fanout pub/sub server to receive and send messages
 
-=head1 SYNPSIS
+=head1 SYNOPSIS
 
   my $fanout= Net::fanout->new( { PeerHost => 'ppt.example.org' });
+  $fanout->subscribe('mychannel');
+  $fanout->announce('mychannel', 'test message');
 
 =cut
 
