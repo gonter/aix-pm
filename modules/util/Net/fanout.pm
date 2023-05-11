@@ -249,14 +249,16 @@ sub main
       print join(' ', scalar localtime(time()), $channel, $msg), "\n";
     }
 
-    if ($stdin->can_read(0.5))
+    if ($stdin->can_read(0.2))
     {
       my $l= <STDIN>; chop($l);
       my ($cmd, $channel, $msg)= split(' ', $l, 3);
-      if ($cmd eq 'announce')
-      {
-        $fanout->announce($channel, $msg);
-      }
+         if ($cmd eq 'announce') { $fanout->announce($channel, $msg); }
+      elsif ($cmd eq 'ping') { $fanout->send("ping\n"); }
+      elsif ($cmd eq 'info') { $fanout->send("info\n"); }
+      elsif ($cmd eq 'subscribe') { $fanout->subscribe($channel); }
+      elsif ($cmd eq 'unsubscribe') { $fanout->unsubscribe($channel); }
+      else { print "unknown command '$cmd'\n"; }
     }
   }
 
