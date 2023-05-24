@@ -14,6 +14,12 @@ Connect to a fanout pub/sub server to receive and send messages
   $fanout->subscribe('mychannel');
   $fanout->announce('mychannel', 'test message');
 
+=head1 STANDALONE MODE
+
+Start fanout, subscribe to three channels and monitor these:
+
+  perl -MNet::fanout -e 'Net::fanout::main()' -- --PeerHost=fanout.example.org --PeerPort=1986 channel1 channel2 channel3
+
 =cut
 
 use strict;
@@ -253,11 +259,22 @@ sub main
     {
       my $l= <STDIN>; chop($l);
       my ($cmd, $channel, $msg)= split(' ', $l, 3);
-         if ($cmd eq 'announce') { $fanout->announce($channel, $msg); }
+         if ($cmd eq 'subscribe') { $fanout->subscribe($channel); }
+      elsif ($cmd eq 'unsubscribe') { $fanout->unsubscribe($channel); }
+      elsif ($cmd eq 'announce') { $fanout->announce($channel, $msg); }
       elsif ($cmd eq 'ping') { $fanout->send("ping\n"); }
       elsif ($cmd eq 'info') { $fanout->send("info\n"); }
-      elsif ($cmd eq 'subscribe') { $fanout->subscribe($channel); }
-      elsif ($cmd eq 'unsubscribe') { $fanout->unsubscribe($channel); }
+      elsif ($cmd eq '') { } # NOP
+      elsif ($cmd eq 'help')
+      {
+        print <<EOX;
+subscribe channel
+unsubscribe channel
+announce channel message
+ping
+info
+EOX
+      }
       else { print "unknown command '$cmd'\n"; }
     }
   }
@@ -267,5 +284,4 @@ sub main
 1;
 
 __END__
-
 
