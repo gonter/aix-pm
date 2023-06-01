@@ -285,3 +285,9 @@ EOX
 
 __END__
 
+=head1 TODO
+
+ * Lost connections to the fanout server are not detected, so at some
+   point, the application might crash, e.g. when something is sent to
+   the fanout server.
+
