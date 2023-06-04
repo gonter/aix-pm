@@ -140,9 +140,10 @@ sub set_border_style
   elsif ($style eq 'Gnome')
   { 
     $header_left=  $border_left=   '| ';
-    $header_inter= $border_inter= ' | ';
+    $header_inter=                ' | ';
     $header_right= $border_right= ' |';
     $border_lx= '|:';
+    $boeder_inter= '|';
     $border_rx= '-|';
     $border_lines= 0;
     $border_header= 1;
