@@ -14,5 +14,6 @@ cp debian/debian-binary $pkgdir
 mkdir -p $bindir
 cp scripts/mkdeb.pl $bindir/
 cp modules/util/csv.pl $bindir/
+ln -s ../share/perl5/Net/fanout.pm $bindir/fanout
 
 scripts/mkdeb.pl $pkgdir
