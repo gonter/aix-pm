@@ -16,9 +16,19 @@ Connect to a fanout pub/sub server to receive and send messages
 
 =head1 STANDALONE MODE
 
-Start fanout, subscribe to three channels and monitor these:
+To start fanout, call the module either this way
 
-  perl -MNet::fanout -e 'Net::fanout::main()' -- --PeerHost=fanout.example.org --PeerPort=1986 channel1 channel2 channel3
+  perl -MNet::fanout -e 'Net::fanout::main()' -- ...more parameters...
+
+or make Net/fanout.pm executable and call it like this
+
+  path/to/Net/fanout.pm ...more parameters...
+
+=head2 examples
+
+=head3 subscribe to three channels and monitor these
+
+  --PeerHost=fanout.example.org --PeerPort=1986 --monitor channel1 channel2 channel3
 
 =cut
 
@@ -221,6 +231,8 @@ sub main
   my $PeerPort= 1986;
 
   my @channels= ();
+  my $monitor= 0;
+  my @messages= ();
   while (my $arg= shift(@ARGV))
   {
     if ($arg =~ /^--(.+)/)
@@ -228,6 +240,8 @@ sub main
       my ($opt, $val)= split('=', $1, 2);
          if ($opt eq 'PeerHost') { $PeerHost= $val || shift(@ARGV); }
       elsif ($opt eq 'PeerPort') { $PeerPort= $val || shift(@ARGV); }
+      elsif ($opt eq 'monitor') { $monitor= 1; }
+      elsif ($opt eq 'message') { my $msg= $val || shift(@ARGV); push (@messages, $msg); }
       # TODO: else report problem
     }
     else
@@ -244,10 +258,18 @@ sub main
     $fanout->subscribe($channel);
   }
 
+  if (@messages && @channels)
+  {
+    foreach my $msg (@messages)
+    {
+      $fanout->announce($channels[0], $msg);
+    }
+  }
+
   my $stdin= IO::Select->new();
   $stdin->add(\*STDIN);
 
-  while (1)
+  while ($monitor)
   {
     my ($channel, $msg)= $fanout->receive();
     if (defined ($channel))
