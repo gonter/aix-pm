@@ -10,14 +10,43 @@ my $pkg_base= $ENV{PKGBASE} || '~/tmp/pkg';
 my @packages= ();
 my $pkg_arch= 'all';
 
+my $compress_suffix= 'zst';
+my @compress_suffixes= qw(gz xz zst);
+
+my @pkg_paths= ();
 while (my $arg= shift (@ARGV))
 {
-  if ($arg eq '--arch') { my $pkg_arch= shift(@ARGV); }
+  if ($arg =~ /^--(.+)/)
+  {
+    my ($opt, $val)= split('=', $1);
+       if ($opt eq 'arch') { $pkg_arch= $val || shift(@ARGV); }
+    elsif ($opt eq 'compress-suffix') { $compress_suffix= $val || shift(@ARGV); }
+    else { usage(); }
+  }
+  elsif ($arg =~ /^-/)
+  {
+    usage();
+  }
   else
   {
-    mk_package_by_path($arg, $pkg_arch);
+    push(@pkg_paths, $arg);
   }
 }
+
+# downgrade compression to xz or gz if zstd or xz binaries are not available
+$compress_suffix= 'xz' if ($compress_suffix eq 'zst' && !-x '/usr/bin/zstd');
+$compress_suffix= 'gz' if ($compress_suffix eq 'xz'  && !-x '/usr/bin/xz');
+
+if ($compress_suffix eq 'gz' && !-x '/bin/gzip')
+{
+  die "no usable compression algorithm";
+}
+
+foreach my $arg (@pkg_paths)
+{
+  mk_package_by_path($arg, $pkg_arch);
+}
+exit(0);
 
 sub mk_package_by_path
 {
@@ -68,20 +97,45 @@ sub mk_package
   print __LINE__, " deb=[$deb]\n";
 
   # mk_md5sums();
-  unlink('control.tar.xz');
-  unlink('data.tar.xz');
+  foreach my $part (qw(control data))
+  {
+    foreach my $suffix (@compress_suffixes)
+    {
+      my $fnm= join('.', $part, 'tar', $suffix);
+      unlink ($fnm) if (-f $fnm);
+    }
+  }
 
   cmd("(cd data && find [a-z]* -type f -print | xargs md5sum) >control/md5sums");
   cmd('(cd control && tar -cf ../control.tar .)');
   cmd('(cd data && tar -cf ../data.tar .)');
 
-  cmd(qw(xz -z control.tar data.tar));
+  my $control_compressed;
+  my $data_compressed;
+  if ($compress_suffix eq 'zst')
+  {
+    cmd(qw(xz -z control.tar data.tar));
+    $control_compressed= 'control.tar.zst';
+    $data_compressed= 'data.tar.zst';
+  }
+  elsif ($compress_suffix eq 'xz')
+  {
+    cmd(qw(xz -z control.tar data.tar));
+    $control_compressed= 'control.tar.xz';
+    $data_compressed= 'data.tar.xz';
+  }
+  elsif ($compress_suffix eq 'gz')
+  {
+    cmd(qw(gzip control.tar data.tar));
+    $control_compressed= 'control.tar.gz';
+    $data_compressed= 'data.tar.gz';
+  }
 
   # the ar file must contain these fils in this order and should be wiped before
   unlink($deb);
   cmd('ar', 'rcSv', $deb, 'debian-binary');
-  cmd('ar', 'rcSv', $deb, 'control.tar.xz');
-  cmd('ar', 'rcSv', $deb, 'data.tar.xz');
+  cmd('ar', 'rcSv', $deb, $control_compressed);
+  cmd('ar', 'rcSv', $deb, $data_compressed);
 
   chdir('..');
   chdir('..');
