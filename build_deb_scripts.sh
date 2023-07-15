@@ -16,4 +16,6 @@ cp scripts/mkdeb.pl $bindir/
 cp modules/util/csv.pl $bindir/
 ln -s ../share/perl5/Net/fanout.pm $bindir/fanout
 
-scripts/mkdeb.pl $pkgdir
+echo scripts/mkdeb.pl $pkgdir $*
+scripts/mkdeb.pl $pkgdir $*
+

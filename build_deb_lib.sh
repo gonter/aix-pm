@@ -13,4 +13,6 @@ mkdir $pkgdir/control
 cp debian/control $pkgdir/control
 cp debian/debian-binary $pkgdir
 
-scripts/mkdeb.pl $pkgdir
+echo scripts/mkdeb.pl $pkgdir $*
+scripts/mkdeb.pl $pkgdir $*
+
