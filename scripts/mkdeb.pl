@@ -133,6 +133,12 @@ sub mk_package
 
   # the ar file must contain these fils in this order and should be wiped before
   unlink($deb);
+  unless (-f 'debian-binary')
+  {
+    open (FO, '>:utf8', 'debian-binary');
+    print FO "2.0\n";
+    close (FO);
+  }
   cmd('ar', 'rcSv', $deb, 'debian-binary');
   cmd('ar', 'rcSv', $deb, $control_compressed);
   cmd('ar', 'rcSv', $deb, $data_compressed);
