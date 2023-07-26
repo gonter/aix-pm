@@ -102,9 +102,21 @@ $config is a hash which provides the following keys:
  * db_name: Name of the MongoDB
  * username
  * password
+ * collection
 
 optionally:
  * port can currently not be specified
+
+Note about configuration names for the database:
+
+This utility function uses the first entry from the list ('db_name',
+'db_auth', 'db_work', 'db', 'database') as 'db_name' to connect to MongoDB
+and authenticate against it.  If there is a config parameter 'db_work',
+then it's value is use to connect to, otherwise the database which was
+used for authentication is used.
+
+If collection is provided as a config parameter, then a get_collection()
+is done on it's value and the result is returned as second parameter.
 
 =cut
 
@@ -115,7 +127,7 @@ sub connect
 
   my %c;
   foreach my $k1 (['host', 'hostname'], 'port', ['username', 'user'], ['password', 'pass'],
-                 ['db_name', 'db', 'database'], 'collection')
+                 ['db_name', 'db_auth', 'db_work', 'db', 'database'], 'collection')
   {
     if ($k1 eq 'collection')
     {
@@ -184,7 +196,9 @@ DIE:
 =end comment
 =cut
 
-  my $db= $m->get_database ($c{'db_name'});
+  my $db_get= (exists ($mdb->{db_work})) ? $mdb->{db_work} : $c{db_name};
+  # print __LINE__, " db_get=[$db_get]\n";
+  my $db= $m->get_database ($db_get);
   goto DIE unless (defined ($db));
   # print "db=[$db] ", Dumper ($db);
 
