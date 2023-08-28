@@ -121,6 +121,7 @@ sub read_config
   # print "mon_cfg: ", Dumper ($mon_cfg);
 
   $obj->{mon_cfg}= $mon_cfg;
+  return 0 unless (defined ($mon_cfg));
   $obj->{cfg_fnm}= $cfg_fnm;
   # TODO: add mtime for update to work...
 
