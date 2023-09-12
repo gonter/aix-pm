@@ -88,7 +88,7 @@ my $op_mode= 'cat';
 my $show_header= 0;
 my $UTF8= 0;
 my $out_file;
-my @columns;
+my @show_columns;
 my @sort_columns;
 my @set_columns;
 my $sort_numeric= 0;
@@ -137,7 +137,7 @@ while (defined (my $arg= shift (@ARGV)))
     elsif ($opt eq 'dumper') { $view= 'dumper'; }
     elsif ($opt eq 'Dumper') { $view= 'Dumper'; }
     elsif ($opt eq 'setcol') { push (@set_columns,  split (',', $val || shift (@ARGV))); }
-    elsif ($opt eq 'col')    { push (@columns,      split (',', $val || shift (@ARGV))); }
+    elsif ($opt eq 'col')    { push (@show_columns, split (',', $val || shift (@ARGV))); }
     elsif ($opt eq 'sort')   { push (@sort_columns, split (',', $val || shift (@ARGV))); }
     elsif ($opt eq 'num')    { $sort_numeric= 1; }
     elsif ($opt eq 'nsort')  { push (@sort_columns, split (',', $val || shift (@ARGV))); $sort_numeric= 1; }
@@ -353,6 +353,8 @@ while (my $fnm= shift (@PARS))
   $csv->merge_csv_file ($fnm);
 }
 
+my @columns;
+
 if (defined ($json_file_to_load))
 {
   my $data= Util::JSON::read_json_file ($json_file_to_load);
@@ -377,7 +379,49 @@ if (defined ($json_file_to_load))
 }
 
 # print "cols=", Dumper ($csv->{'columns'}), "\n";
-@columns= @{$csv->{columns}} if (!@columns && exists ($csv->{columns}) && defined ($csv->{columns}));
+
+# ---------------------------------------------------------------------
+# Set up the list of columns which are then used or saved
+# If a list of columns is defined via --col <name>[,<name>]*, then this
+# is used, otherwise the list of columns is taken from the CSV file
+# itself.
+# <name> should come from the list of available columns, but it does
+# not have to, e.g. when a CSV file should receive an empty new column
+# for later filling in.
+# If <name> is '*', then all unused available columns are added to
+# the end.
+# The same column name can be added multiple times in the --col option;
+# we assume, the users knows what they do.
+# ---------------------------------------------------------------------
+if (!@columns)
+{
+  my @available_columns= @{$csv->{columns}} if (exists ($csv->{columns}) && defined ($csv->{columns}));
+  if (@show_columns)
+  {
+    my %inserted;
+    my $show_rest_too= 0;
+
+    foreach my $c (@show_columns)
+    {
+      if ($c eq '*') { $show_rest_too= 1; next; }
+      push (@columns, $c);
+      $inserted{$c}= 1;
+    }
+
+    if ($show_rest_too)
+    {
+      foreach my $c (@available_columns)
+      {
+        push (@columns, $c) unless ($inserted{$c});
+      }
+    }
+  }
+  else
+  {
+    @columns= @available_columns;
+  }
+}
+print __LINE__, " columns: ", join(' ', @columns), "\n";
 
 if (@sort_columns)
 {
