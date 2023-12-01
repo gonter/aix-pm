@@ -166,6 +166,15 @@ sub load_csv_file
 
   return undef unless (defined ($fi_open));
 
+  if (exists($obj->{skip}))
+  {
+    my $skip= $obj->{skip};
+    if ($skip =~ /^\d+$/ && $skip > 0)
+    {
+      while ($skip-- > 0) { <FI>; } # skip a number of lines
+    }
+  }
+
   $obj->load_csv_file_headings (*FI) unless ($obj->{'no_headings'});
 
   if (@{$obj->{columns}}  # NOTE: columns might have been defined using $obj->define_columns(...)

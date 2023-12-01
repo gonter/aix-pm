@@ -98,6 +98,7 @@ my $view= 'matrix'; # values: matrix, extended, header, json, dumper
 my $all= 0; # for extend view, sofar...
 my $find_pattern= undef;   # this is used for a pattern match
 my $search_string= undef;  # this is used to select a certain value in a column
+my $skip= undef;
 
 # used for option --in <fieldname> <field_value>+
 my @search_strings;
@@ -121,6 +122,7 @@ while (defined (my $arg= shift (@ARGV)))
        if ($opt eq 'merge')  { $op_mode= 'merge'; $view= 'no'; }
     elsif ($opt eq 'dump')   { $DUMP_FILE=     $val || shift (@ARGV); }
     elsif ($opt eq 'out')    { $out_file=      $val || shift (@ARGV); }
+    elsif ($opt eq 'skip')   { $skip=          $val || shift (@ARGV); }
     elsif ($opt eq 'find')   { $find_pattern=  $val || shift (@ARGV); } # TODO: allow multiple patterns!
     elsif ($opt eq 'search' || $opt eq 'select')
     { # TODO: allow multiple searches!
@@ -337,10 +339,8 @@ EOX
   $csv->set ('fidef' => \&fidef3);
 }
 
-if (defined ($max_items))
-{
-  $csv->set ( max_items => $max_items );
-}
+$csv->set ( max_items => $max_items ) if (defined ($max_items));
+$csv->set ( skip => $skip ) if (defined ($skip));
 
 my $fnm= shift (@PARS);
 $csv->load_csv_file ($fnm);
