@@ -290,9 +290,9 @@ sub mon_fs
   # print __LINE__, " checking fs_hash: ", main::Dumper($fs_hash);
   foreach my $fs (keys %$fs_hash)
   {
-    # print __LINE__, " fs=[$fs]\n";
+    print __LINE__, " fs=[$fs]\n";
     my $x_fs= $fs_hash->{$fs};
-    # print "x_fs($fs): ", Dumper ($x_fs);
+    print __LINE__, " x_fs($fs): ", Dumper ($x_fs);
 
     # TODO:
     # * calculate a proper nagios status code
@@ -348,10 +348,10 @@ sub mon_fs
   my $event_id= $events->insert($ev);
   # print "event_id: ", Dumper ($event_id);
 
-  if (1)
+  if (0)
   {
     $ev->{'_id'}= $event_id->{'value'};
-    print "reporing event: ", Dumper ($ev);
+    print "reporting event: ", Dumper ($ev);
     # $ev->{'ts'}= $ts;
   }
 
