@@ -13,7 +13,7 @@ BEGIN {
 
   if ($@)
   {
-    print STDERR "defining read_text ourselves\n";
+    # print STDERR "defining read_text ourselves\n";
     *read_text=  *x_read_text;
     *write_text= *x_write_text;
   }
