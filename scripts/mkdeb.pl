@@ -21,6 +21,7 @@ while (my $arg= shift (@ARGV))
     my ($opt, $val)= split('=', $1);
        if ($opt eq 'arch') { $pkg_arch= $val || shift(@ARGV); }
     elsif ($opt eq 'compress-suffix') { $compress_suffix= $val || shift(@ARGV); }
+    elsif ($opt =~ m#^(gz|xz|zst)$#) { $compress_suffix= $opt; }
     else { usage(); }
   }
   elsif ($arg =~ /^-/)
@@ -114,7 +115,7 @@ sub mk_package
   my $data_compressed;
   if ($compress_suffix eq 'zst')
   {
-    cmd(qw(xz -z control.tar data.tar));
+    cmd(qw(zstd -z control.tar data.tar));
     $control_compressed= 'control.tar.zst';
     $data_compressed= 'data.tar.zst';
   }
