@@ -11,7 +11,7 @@ chmod +x $pkgdir/data/usr/share/perl5/Net/fanout.pm
 
 mkdir $pkgdir/control
 cp debian/control $pkgdir/control
-cp debian/debian-binary $pkgdir
+echo "2.0" >$pkgdir/debian-binary
 
 echo scripts/mkdeb.pl $pkgdir $*
 scripts/mkdeb.pl $pkgdir $*

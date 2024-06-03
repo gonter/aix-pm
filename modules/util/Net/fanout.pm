@@ -227,7 +227,7 @@ sub send
 
 sub main
 {
-  my $PeerHost= undef;
+  my $PeerHost= 'localhost';
   my $PeerPort= 1986;
 
   my @channels= ();

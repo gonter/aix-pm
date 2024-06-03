@@ -9,7 +9,7 @@ bindir=$pkgdir/data/usr/bin
 mkdir -p $pkgdir/control
 
 cp scripts/debian/control $pkgdir/control
-cp debian/debian-binary $pkgdir
+echo "2.0" >$pkgdir/debian-binary
 
 mkdir -p $bindir
 cp scripts/mkdeb.pl $bindir/
