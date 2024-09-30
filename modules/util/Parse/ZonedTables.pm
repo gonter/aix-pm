@@ -1,7 +1,7 @@
 
 package Parse::ZonedTables;
 
-# TODO: this is not a good nme, find something better!
+# TODO: this is not a good name, find something better!
 
 use strict;
 
