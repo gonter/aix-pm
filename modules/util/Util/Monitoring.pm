@@ -165,7 +165,7 @@ sub get_collection
   my $name= shift;
 
   my $col_handle= '_'. $name;
-  return $self->{$col_handle} if (exists($self->{$col_handle}));
+  return $self->{$col_handle} if (exists($self->{$col_handle}) && defined ($self->{$col_handle}));
 
   my $mon_cfg= $self->{mon_cfg};
   my $paf= $mon_cfg->{'AgentDB'};
