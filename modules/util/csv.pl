@@ -421,7 +421,7 @@ if (!@columns)
     @columns= @available_columns;
   }
 }
-print __LINE__, " columns: ", join(' ', @columns), "\n";
+# print __LINE__, " columns: ", join(' ', @columns), "\n";
 
 if (@sort_columns)
 {
