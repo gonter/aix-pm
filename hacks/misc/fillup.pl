@@ -84,13 +84,13 @@ sub usage
 }
 
 my $file_size= $block_size*$mb_count;
-print "file_size=[$file_size]\n";
 if (!-f $input || (stat(_))[7] < $file_size)
 { # create input file if it does not exist or is too small
   my @cmd= ('dd', 'if=/dev/urandom', "of=$input", "bs=$block_size", "count=$mb_count");
   print ">>> ", join (' ', @cmd), "\n";
   system (@cmd);
 }
+print "file_size=[$file_size]\n";
 
 unless (-d $output)
 {
@@ -161,7 +161,7 @@ while (1)
     else
     {
       my $rc= system (@c);
-      print join (' ', @c), ", rc='$rc'\n";
+      print join (' ', scalar localtime(time()), @c), ", rc='$rc'\n";
       if ($rc)
       {
         print "copy return code=[$rc]; stopping\n";
