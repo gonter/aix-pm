@@ -105,7 +105,7 @@ while (1)
       $dd= Disk::Dump->start($dd_dev);
       $dd_pid= $dd->get_pid();
       $delay= 0;
-      print __LINE__, " dd: dd_pid=[$dd_pid]", Dumper($dd);
+      # print __LINE__, " dd: dd_pid=[$dd_pid]", Dumper($dd);
     }
     elsif ($action->{status} == 2)
     {
@@ -248,7 +248,7 @@ sub get_line
     if ($@)
     {
       print __LINE__, " get_line pump failed with $@\n";
-      print __LINE__, " self: ", main::Dumper($self);
+      # print __LINE__, " self: ", main::Dumper($self);
     }
   }
 
@@ -271,7 +271,7 @@ sub start
   my $cmd= shift;
 
   my $jcf= IPC::Run::start($cmd, $self->{_in}, $self->{_cl}, $self->{_cl}) or return undef;
-  print __LINE__, " jcf=[$jcf]\n";
+  # print __LINE__, " jcf=[$jcf]\n";
 
   $self->{_jcf}= $jcf;
 }
