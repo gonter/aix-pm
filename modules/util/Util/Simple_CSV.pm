@@ -18,10 +18,10 @@ Util::Simple_CSV  --  simple CSV file and content handling
 
 =head2 my $csv= new Util::Simple_CSV (paramters);
 
-parameters:
-  load => filename
-  separator => csv_separator, default: ;
-  ...
+ parameters:
+   load => filename
+   separator => csv_separator, default: ;
+   ...
 
 =cut
 
