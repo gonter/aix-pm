@@ -8,7 +8,8 @@ $Data::Dumper::Indent= 1;
 
 open (MSG, '/var/log/messages')    # RHEL, CentOS
   or open (MSG, '/var/log/syslog') # Ubuntu
-  or die "cant read messages";     # TODO: or try something else?
+  or open (MSG, '|-', 'journalctl -ex') # Debian
+  or die "can't read messages";     # TODO: or try something else?
 
 seek (MSG, 0, 2);
 
