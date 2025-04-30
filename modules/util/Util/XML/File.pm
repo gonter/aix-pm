@@ -41,10 +41,10 @@ print __FILE__, ' ', __LINE__, " cache: mtime=$st[9] max_age=$max_age use=$use_c
     while (<FI>) { $xml .= $_ };
     close (FI);
 
-    $xmlref= XMLin($xml, ForceContent => 1, ForceArray => 1);
+    $xmlref= XMLin($xml, ForceContent => 1, ForceArray => 1, KeyAttr => [ ]);
 
     # TODO: if the file is not ok, ignore the cached file and refetch
-    return ($xmlref, $xml);
+    return ($xmlref, $xml, 1);
   }
 
   print __LINE__, " fetch_xml_file: url=[$url]\n";
@@ -52,7 +52,7 @@ print __FILE__, ' ', __LINE__, " cache: mtime=$st[9] max_age=$max_age use=$use_c
 
   unless ($res->is_success)
   {
-    print "ERROR: Aleph-XML-Query (find) failed: ", $res->status_line, "\n";
+    print "ERROR: XML retrieval failed: ", $res->status_line, "\n";
     return undef;
   }
 
@@ -74,10 +74,10 @@ print __LINE__, " fetch: xml=[$xml]\n" if ($DEBUG > 0);
      # TODO: else report that we can not write to the cache as we should
   }
 
-  $xmlref= XMLin ($xml, ForceContent => 1, ForceArray => 1, KeyAttr => [ ] );
+  $xmlref= XMLin ($xml, ForceContent => 1, ForceArray => 1, KeyAttr => [ ]);
 print __LINE__, " xmlref: ", main::Dumper ($xmlref) if ($DEBUG > 0);
 
-  return ($xmlref, $xml);
+  return ($xmlref, $xml, 0);
 }
 
 sub save
