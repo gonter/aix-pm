@@ -106,6 +106,7 @@ sub status
           elsif ($rst == 3)
           {
             if ($t eq '(log)') { $rule{log}= 1; }
+	    elsif ($t eq '#') { $rule{comment}= join(' ', @t); @t= (); }
             else { push (@{$rule{junk}}, $t) }
           }
         }
@@ -117,6 +118,7 @@ sub status
       }
     }
   }
+  close(UFW);
 
   $self;
 }
@@ -140,6 +142,12 @@ sub get_rule
   my $number= shift;
 
   return ($self->{rules}->[$number-1]);
+}
+
+sub get_ipv4_cidr_hash
+{
+  my $self= shift;
+  return $self->{src_ipv4_cidr};
 }
 
 sub block
