@@ -19,7 +19,7 @@ my $ref_inodes= [ 'pct_inodes', 'INODE_LEVEL_WARN' => 90.0, 'INODE_LEVEL_CRIT' =
 my $ref_kbytes= [ 'pct_kbytes', 'KBYTE_LEVEL_WARN' => 90.0, 'KBYTE_LEVEL_CRIT' => 95.0 ];
 
 my @nagios_status= qw(OK UNKNOWN WARNING CRITICAL);
-my %no_inodes= map { $_ => 1 } qw(cifs);
+my %no_inodes= map { $_ => 1 } qw(cifs ceph);
 
 sub main
 {
@@ -165,7 +165,7 @@ sub get_collection
   my $name= shift;
 
   my $col_handle= '_'. $name;
-  return $self->{$col_handle} if (exists($self->{$col_handle}) && defined ($self->{$col_handle}));
+  return $self->{$col_handle} if (exists($self->{$col_handle})); # (??... && defined ($self->{$col_handle}));
 
   my $mon_cfg= $self->{mon_cfg};
   my $paf= $mon_cfg->{'AgentDB'};
