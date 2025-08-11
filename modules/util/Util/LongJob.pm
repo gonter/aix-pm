@@ -52,7 +52,7 @@ sub start
   { # child
     my @cmd= ($job->{command}, @{$job->{argv}});
     $SIG{INT}= 'IGNORE';
-    print __LINE__, " LJ: child: command=[", join(' ', @cmd), "]\n";
+    print __LINE__, ' ', scalar localtime(time()), " LJ: child: command=[", join(' ', @cmd), "]\n";
     exec(@cmd);
   }
   elsif ($pid > 0)

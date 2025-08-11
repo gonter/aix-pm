@@ -53,14 +53,14 @@ sub start_job
   my $sleep_time= int(rand(30)+30);
   print __LINE__, " sleep_time=[$sleep_time]\n";
 
-  my $task=
-  {
+  my %task=
+  (
     command => 'sleep',
     argv => [$sleep_time],
     # cb_finished => \&finished, # TBD...
-  };
+  );
 
-  my $pid= $lj->start( $task );
+  my $pid= $lj->start( \%task );
   $allow_new_jobs= 0 if (++$cnt_jobs_total >= $max_jobs_total);
   print __LINE__, " start_job: pid=[$pid] sleep_time=[$sleep_time] cnt_jobs_total=[$cnt_jobs_total]\n";
 
