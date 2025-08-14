@@ -308,7 +308,7 @@ sub mon_fs
     my $check_inodes= 1;
     $check_inodes= 0 if (exists ($no_inodes{$x_fs->{'type'}}));
     $check_inodes= 0 if ($ref->{$fs}->{'no_inodes'});
-    # print "check_inodes=[$check_inodes]\n";
+    # print __LINE__, " check_inodes=[$check_inodes] fs=[$fs]\n";
     if ($check_inodes)
     {
       my $pct_i= get_fs_level($x_fs->{'i'});
