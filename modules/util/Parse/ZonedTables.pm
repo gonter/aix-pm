@@ -7,6 +7,8 @@ use strict;
 
 # use Data::Dumper;
 
+__PACKAGE__->main() unless caller();
+
 sub new
 {
   my $class= shift;
@@ -88,6 +90,11 @@ sub match_fields
   }
 
   (wantarray) ? %rec : \%rec;
+}
+
+sub main
+{
+  my $fnm= shift(@ARGV);
 }
 
 1;
