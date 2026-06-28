@@ -225,6 +225,80 @@ sub send
   $retries;
 }
 
+sub monitor
+{
+  my $fanout= shift;
+  my %pars= @_;
+
+  my $running= 1;
+  my $rrunning= \$running;
+  my $cb_extra_commands;
+  foreach my $an (keys %pars)
+  {
+    my $av= $pars{$an};
+    if ($an eq 'running') { $rrunning= $av } # event loop termination from calling environment
+    elsif ($an eq 'cb_extra_commands') { $cb_extra_commands= $av } # plugin
+  }
+
+  # MAYBE this could be a parameter...
+  my $stdin= IO::Select->new();
+  $stdin->add(\*STDIN);
+  my $started= time();
+
+  my $monitor= 1;
+  MONITOR: while ($monitor && $$rrunning)
+  {
+    my ($channel, $msg)= $fanout->receive();
+    if (defined ($channel))
+    {
+      print join(' ', scalar localtime(time()), $channel, $msg), "\n";
+    }
+
+    # if ($stdin->eof()) { goto BYE; }
+    if ($stdin->can_read(0.2))
+    {
+      my $l= <STDIN>; chop($l);
+      last MONITOR unless (defined ($l));
+
+      my ($cmd, $channel, $msg)= split(' ', $l, 3);
+         if ($cmd eq 'subscribe')   { $fanout->subscribe($channel); }
+      elsif ($cmd eq 'unsubscribe') { $fanout->unsubscribe($channel); }
+      elsif ($cmd eq 'announce')    { $fanout->announce($channel, $msg); }
+      elsif ($cmd eq 'ping')        { $fanout->send("ping\n"); }
+      elsif ($cmd eq 'info')        { $fanout->send("info\n"); }
+      elsif ($cmd eq 'bye' || $cmd eq 'quit' || $cmd eq 'exit') { $monitor= 0 }
+      elsif ($cmd eq 'status')
+      {
+        print "message bus: ", join(':', map { $fanout->{$_} } qw(PeerHost PeerPort)), "\n";
+        print "subscribed channels: ", join(' ', sort keys %{$fanout->{_subscribed}}), "\n";
+      }
+      elsif ($cmd eq '') { } # NOP
+      elsif ($cmd eq 'help')
+      {
+        print <<EOX;
+subscribe channel
+unsubscribe channel
+announce channel message
+status
+ping
+info
+exit
+EOX
+      }
+      else
+      { # check for plugins
+        my $handled= 0;
+        $handled= &{$cb_extra_commands}($fanout, $l) if (defined ($cb_extra_commands));
+        print "unknown command '$cmd'\n" unless ($handled);
+      }
+    }
+  }
+
+  my $runntime= time() - $started;
+  print "bye after $runntime seconds...\n";
+  $runntime;
+}
+
 sub main
 {
   my $PeerHost= 'localhost';
@@ -266,41 +340,10 @@ sub main
     }
   }
 
-  my $stdin= IO::Select->new();
-  $stdin->add(\*STDIN);
-
-  while ($monitor)
+  if ($monitor)
   {
-    my ($channel, $msg)= $fanout->receive();
-    if (defined ($channel))
-    {
-      print join(' ', scalar localtime(time()), $channel, $msg), "\n";
-    }
-
-    if ($stdin->can_read(0.2))
-    {
-      my $l= <STDIN>; chop($l);
-      my ($cmd, $channel, $msg)= split(' ', $l, 3);
-         if ($cmd eq 'subscribe') { $fanout->subscribe($channel); }
-      elsif ($cmd eq 'unsubscribe') { $fanout->unsubscribe($channel); }
-      elsif ($cmd eq 'announce') { $fanout->announce($channel, $msg); }
-      elsif ($cmd eq 'ping') { $fanout->send("ping\n"); }
-      elsif ($cmd eq 'info') { $fanout->send("info\n"); }
-      elsif ($cmd eq '') { } # NOP
-      elsif ($cmd eq 'help')
-      {
-        print <<EOX;
-subscribe channel
-unsubscribe channel
-announce channel message
-ping
-info
-EOX
-      }
-      else { print "unknown command '$cmd'\n"; }
-    }
+    $fanout->monitor()
   }
-
 }
 
 1;
