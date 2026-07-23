@@ -3,12 +3,19 @@ package Parse::CMD::lsof;
 
 use strict;
 
+use IPC::Run;
+
 use Parse::ZonedTables;
 
 sub get_lsof_list
 {
-  open(LSOF, '-|', 'lsof') or die;
-  my $hdr= <LSOF>; chop($hdr);
+  my ($in, $out, $err);
+  my @cmd= qw(lsof -nP);
+  IPC::Run::run (\@cmd, \$in, \$out, \$err);
+  # print __LINE__, " out=[$out]\n";
+  my @out= split("\n", $out);
+  my $hdr= shift (@out);
+  # print __LINE__, " hdr=[$hdr]\n";
 
   # V1:
   # my $fields= Parse::ZonedTables->new();
@@ -19,10 +26,8 @@ sub get_lsof_list
 
   my @lines;
   my %pids;
-  while (my $l= <LSOF>)
+  while (my $l= shift(@out))
   {
-    chop($l);
-    # print __LINE__, " lsof: l=[$l]\n";
     my $rec= $fields->match_fields($l);
     $rec->{_line}= $l; $rec->{_head}= $hdr; # used for debugging
     # print __LINE__, " rec: ", Dumper($rec);
